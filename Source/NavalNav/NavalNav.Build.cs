@@ -10,6 +10,8 @@ public class NavalNav : ModuleRules
 {
 	public NavalNav(ReadOnlyTargetRules Target) : base(Target)
 	{
+		PublicIncludePaths.Add(ModuleDirectory);
+		
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[]
