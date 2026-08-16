@@ -76,3 +76,16 @@ DerivedDataCache/*
 
 # Build output of the standalone algorithm self-test (Tools/AlgoSelfTest)
 **/Intermediate/
+
+# Build & editor artifacts (any depth)
+**/Binaries/
+**/Intermediate/
+**/DerivedDataCache/
+**/Saved/
+**/.vs/
+**/.idea/
+.vscode/
+*.code-workspace
+*.sln
+*.bundle
+.ignore
