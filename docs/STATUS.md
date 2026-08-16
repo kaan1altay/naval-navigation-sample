@@ -1,13 +1,20 @@
 # Project status
 
-_Last updated: 2026-08-16 — end of Slice 1._
+_Last updated: 2026-08-16 — end of Slice 2._
+
+> **Now building on Windows.** Slices 1 and 2 compile with UE 5.5 + Visual Studio 2022
+> (MSVC 14.44) via Unreal Build Tool, and all **13 automation tests pass in-engine**
+> (`Automation RunTests NavalNav`, headless, `-nullrhi`). The Linux notes below are the
+> history of how Slice 1 was first authored; they no longer describe the only place the code
+> has run.
 
 ## Environment
 
-The work was carried out in a **Linux container** (Ubuntu 24.04, x86-64), not on the Windows
-workstation the task originally assumed. That has one consequence worth stating plainly at the
-top: **the project has not been compiled by Unreal Build Tool.** Everything below is written
-against the UE 5.5 API but has not been through UHT or a C++ compiler with engine headers.
+Slice 1 was first authored in a **Linux container** (Ubuntu 24.04, x86-64), not on the Windows
+workstation the task assumed, so at the end of Slice 1 the project had not yet been compiled by
+Unreal Build Tool — everything was written against the UE 5.5 API and verified only by the
+engine-free harness. Slice 2 was built on the Windows box, where the whole module now compiles
+and the tests run in the editor.
 
 | Tool | Found | Notes |
 | --- | --- | --- |
@@ -78,9 +85,66 @@ expanded cells and plan time. It ticks in the editor viewport too, so a zone can
 around and the route seen bending without entering PIE. Console variables: `naval.DrawGrid`,
 `naval.DrawCosts`, `naval.DrawPath`.
 
+## What is implemented — Slice 2: sailing ship + wind
+
+```
+Source/NavalNav/
+  Ship/SailingModel.{h,cpp}             FSailingModel, FSailingModelParams, FSailingState
+  Ship/WindSubsystem.{h,cpp}            UWindSubsystem (UTickableWorldSubsystem)
+  Ship/SailingShipPawn.{h,cpp}          ASailingShipPawn (kinematic)
+  Ship/ShipPowerComponent.{h,cpp}       UShipPowerComponent + FOnPowerChanged
+  Ship/SailingShipConfig.h              USailingShipConfig (UDataAsset, optional rig sharing)
+  Ship/SailingShipPlayerController.*    ASailingShipPlayerController (optional manual control)
+  Tests/SailingShipTest.cpp             5 automation tests
+```
+
+**Sailing model.** `FSailingModel` is a plain, engine-free struct — the same discipline as the
+Slice 1 pathfinder core — so the physics is unit-tested without a `UWorld`. The heart of it is
+the **polar curve**: forward drive as a function of the angle between the bow and the wind. It is
+flatly zero inside a **no-go zone** (±`NoGoAngleDegrees`, default 40°) dead upwind, rises smoothly
+to a peak of 1 on a **beam reach**, and eases to `DownwindFactor` (0.65) dead downwind. Speed then
+integrates against a **quadratic drag** toward a bounded terminal, and — this is the tuning trick —
+the drag coefficient is derived from `MaxThrustAccel` and `MaxSpeed` so thrust and drag balance
+*exactly* at `MaxSpeed`. Terminal speed is therefore `MaxSpeed · √drive`, bounded by construction
+rather than by luck. The drag step is semi-implicit, so it stays stable and non-negative under any
+frame time. Yaw comes from the rudder scaled by **steering authority**, which is zero at rest and
+reaches full bite at `SteeringResponseSpeedRatio` of top speed: a ship cannot turn without way on,
+which is the constraint that makes the Slice 3 follower non-trivial. `PredictTurnRadius` and
+`EstimateTimeToTurn` are provided for that follower's look-ahead.
+
+**Wind.** `UWindSubsystem` is one wind per world, read by anything that sails. It carries a
+direction (yaw the wind blows *toward*) and a 0..1 strength, can drift the direction slowly for a
+demo (`bDriftDirection`), and can be overridden live from the console — `naval.Wind.Yaw`,
+`naval.Wind.Strength` — without touching a placed actor. `GetWindFromYaw()` returns the opposite
+bearing, which is the angle the polar is measured against.
+
+**Ship.** `ASailingShipPawn` is **kinematic** — no PhysX, no Chaos, no buoyancy. It is a thin
+shell around `FSailingModel`: it reads the wind, advances the model, and writes the result straight
+onto the actor transform. Inputs are two numbers, `SetRudderInput(-1..1)` and `SetSailTrim(0..1)`.
+Optional lateral **leeway** adds a little cosmetic downwind drift. `naval.Ship.Debug` draws a
+heading arrow, a wind arrow, the rudder kick and a text readout (heading, speed, rudder, trim,
+angle off wind, and a NO-GO flag), and the pawn ticks in an editor viewport so it can be tuned
+without PIE. `UShipPowerComponent` holds the ship's combat power and fires `FOnPowerChanged` for
+Slice 4 to react to. `ASailingShipPlayerController` (optional) lets a human sail with A/D + W/S for
+recording clips, building its Enhanced Input actions in code so there is no asset to ship.
+
+**What is tunable** (all `EditAnywhere`, grouped, or via a `USailingShipConfig` data asset):
+`MaxSpeed`, `MaxThrustAccel`, `MaxTurnRateDegPerSec`, `MaxRudderAngleDegrees`, `RudderRateDegPerSec`,
+`SteeringResponseSpeedRatio`, `NoGoAngleDegrees`, `BeamReachAngleDegrees`, `DownwindFactor`,
+`bEnableLeeway`/`LeewayFactor`; and on the wind, direction, strength and drift.
+
+**Known simplifications (deliberate).** No sideways hull momentum or inertia in the turn — heading
+changes are driven straight by the rudder, not by an accumulated angular velocity. No apparent-wind
+feedback (the polar uses true wind, not the wind altered by the ship's own motion). Trim maps
+linearly onto drive rather than modelling sail stall past the ideal sheeting angle. Tacking through
+the eye of the wind loses speed only through the no-go zero, not through an explicit momentum cost.
+None of these are needed for a readable, predictable ship the navigation follower can drive; the
+model is intentionally the *simplest* thing that still forces tacking and reproduces turn radius.
+
 ## Did it compile?
 
-**Not as an Unreal module — no engine, no toolchain on this machine.** What *was* verified:
+Slice 2 **compiles and its tests pass** on Windows (UE 5.5, VS 2022 / MSVC 14.44); the table below
+is the Slice 1 verification, done before an engine was available. What *was* verified then:
 
 | Check | Result |
 | --- | --- |
@@ -115,29 +179,35 @@ Covered scenarios (identical in the automation tests and the standalone harness)
 The standalone harness additionally runs a **reference Dijkstra** over the same cost model and
 asserts A\* returns exactly the optimal cost on 12 randomised cost fields with threat blobs.
 
+Slice 2 added the five sailing scenarios to that same harness (`Ship/SailingModel.cpp` is now in
+its compile list). They were **not** re-run standalone on the Windows box — it has no POSIX C++
+compiler — but the identical cases pass as UE automation tests, so the standalone count above is
+the Slice 1 figure, not the current one.
+
 One real bug was caught by the tests while writing them: a zone configured with no lethal core
 made the single cell at its exact centre impassable (`0 <= 0`), quietly punching a hole through
 an otherwise avoidable zone.
 
 ## What needs attention
 
-1. **Build the project.** On a Windows box with UE 5.5 + VS 2022:
-   `Engine\Build\BatchFiles\Build.bat NavalNavSampleEditor Win64 Development -Project="…\NavalNavSample.uproject" -WaitMutex`.
-   Expect the usual first-compile friction (a missing include, a UHT specifier) — the code has
-   never seen UHT. Header hygiene was linted, but that is not the same as compiling.
-2. **Run the automation tests in-engine** to confirm they match the standalone results:
-   `UnrealEditor-Cmd.exe NavalNavSample.uproject -ExecCmds="Automation RunTests NavalNav" -unattended -nopause -testexit="Automation Test Queue Empty"`.
-3. **No demo map yet.** `GameDefaultMap` points at an engine template map. The demo level with
-   placed `ADangerZone`s and an `ANavalNavDebugActor` arrives with Slice 4; a `.umap` cannot be
-   authored without the editor.
-4. **`EngineAssociation` is `"5.5"`.** Change it if the target machine has a different version.
+1. **No demo map yet.** `GameDefaultMap` points at an engine template map. The demo level with
+   placed `ADangerZone`s, an `ANavalNavDebugActor` and a sailing ship arrives with Slice 4; a
+   `.umap` is best authored in the editor.
+2. **The pawn has no mesh by default.** `HullMesh` is an empty `UStaticMeshComponent`, so a placed
+   ship is invisible until a level assigns one (or drops a child mesh). The debug overlay
+   (`naval.Ship.Debug 1`) shows it regardless.
+3. **`EngineAssociation` is `"5.5"`.** Change it if the target machine has a different version.
+4. **Eyeball the sailing feel in a viewport.** Drop an `ASailingShipPawn`, set `naval.Ship.Debug 1`,
+   and give it rudder/trim (possess it with `ASailingShipPlayerController`, or call the setters):
+   watch it stall head-to-wind, accelerate onto a reach, and turn only once it has way on. The
+   defaults are tuned for readability, not for any particular hull — expect to retune per ship.
 
 ## Roadmap
 
-- **Slice 2 — sailing ship pawn + wind subsystem.** Physically driven hull (buoyancy,
-  drag, rudder), a `UWindSubsystem` with direction/strength and local gusts, sail trim mapped
-  through Enhanced Input. The interesting constraint: a sailing ship cannot hold an arbitrary
-  heading, which is what makes the follower in Slice 3 non-trivial.
+- **Slice 2 — sailing ship pawn + wind subsystem. _Done._** A kinematic hull driven by a polar
+  curve, a `UWindSubsystem` with direction/strength/drift, two-number helm-and-trim input. The
+  interesting constraint is delivered: a sailing ship cannot make ground dead upwind and cannot
+  turn without way on, which is what makes the follower in Slice 3 non-trivial.
 - **Slice 3 — predictive helmsman follower.** Consumes `FNavalPath` and drives the pawn:
   look-ahead proportional to speed and turning radius, no-go-zone awareness against the wind,
   tacking when the next leg is upwind. `FNavalPath::Costs` is already there for it to decide
