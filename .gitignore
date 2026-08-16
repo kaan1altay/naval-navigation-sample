@@ -73,3 +73,6 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# Build output of the standalone algorithm self-test (Tools/AlgoSelfTest)
+**/Intermediate/
