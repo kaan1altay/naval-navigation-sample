@@ -10,8 +10,10 @@
 
 #include "Grid/SeaGridPathfinder.h"
 #include "Grid/SeaGridTypes.h"
+#include "Ship/SailingModel.h"
 #include "Threat/ThreatEvaluator.h"
 
+#include <cmath>
 #include <cstdio>
 #include <random>
 #include <queue>
@@ -599,6 +601,154 @@ namespace
 		TEST_NEARLY(FSeaGridPathfinder::OctileDistance(FIntPoint(0, 0), FIntPoint(3, 3)), 3.0f * 1.41421356f, 1.0e-4f);
 		TEST_NEARLY(FSeaGridPathfinder::OctileDistance(FIntPoint(0, 0), FIntPoint(5, 2)), 3.0f + 2.0f * 1.41421356f, 1.0e-4f);
 	}
+
+	// -------------------------------------------------------------------------------------
+	/** Advances a state on a fixed helm/trim for Seconds and returns where it ends up. */
+	FSailingState SailFor(const FSailingModel& Model, FSailingState Start, float Rudder, float Trim,
+		float WindFromYaw, float WindStrength, float Seconds, float Dt = 0.05f)
+	{
+		const int32 Steps = FMath::Max(1, FMath::RoundToInt32(Seconds / Dt));
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			Model.Advance(Start, Rudder, Trim, WindFromYaw, WindStrength, Dt);
+		}
+		return Start;
+	}
+
+	void TestPolarCurve()
+	{
+		BeginTest("Polar curve is zero upwind and peaks on a reach");
+
+		const FSailingModelParams P;
+
+		TEST_NEARLY(FSailingModel::PolarThrustFactor(0.0f, P), 0.0f, 1.0e-4f);
+		TEST_NEARLY(FSailingModel::PolarThrustFactor(P.NoGoAngleDegrees - 5.0f, P), 0.0f, 1.0e-4f);
+		TEST_NEARLY(FSailingModel::PolarThrustFactor(P.NoGoAngleDegrees, P), 0.0f, 1.0e-4f);
+
+		TEST_NEARLY(FSailingModel::PolarThrustFactor(P.BeamReachAngleDegrees, P), 1.0f, 1.0e-3f);
+		TEST_NEARLY(FSailingModel::PolarThrustFactor(70.0f, P), FSailingModel::PolarThrustFactor(-70.0f, P), 1.0e-4f);
+
+		const float CloseHauled = FSailingModel::PolarThrustFactor(P.NoGoAngleDegrees + 10.0f, P);
+		const float BroadReach = FSailingModel::PolarThrustFactor(140.0f, P);
+		TEST_CHECK(CloseHauled > 0.0f);
+		TEST_CHECK(CloseHauled < 1.0f);
+		TEST_CHECK(BroadReach < 1.0f);
+		TEST_CHECK(BroadReach > CloseHauled);
+		TEST_NEARLY(FSailingModel::PolarThrustFactor(180.0f, P), P.DownwindFactor, 1.0e-3f);
+
+		float Previous = -1.0f;
+		for (float Angle = P.NoGoAngleDegrees; Angle <= P.BeamReachAngleDegrees; Angle += 2.0f)
+		{
+			const float Value = FSailingModel::PolarThrustFactor(Angle, P);
+			TEST_CHECK(Value >= Previous - 1.0e-4f);
+			Previous = Value;
+		}
+	}
+
+	void TestConvergesToBoundedSpeed()
+	{
+		BeginTest("Speed converges to a bounded terminal on a reach");
+
+		FSailingModel Model;
+		const float WindFromYaw = -90.0f; // heading 0 is a beam reach
+
+		FSailingState Beam;
+		Beam.HeadingDegrees = 0.0f;
+		const FSailingState Settled = SailFor(Model, Beam, 0.0f, 1.0f, WindFromYaw, 1.0f, 120.0f);
+		const float Terminal = Model.TerminalSpeedForDrive(1.0f);
+
+		TEST_NEARLY(Settled.Speed, Terminal, Terminal * 0.02f);
+		TEST_NEARLY(Terminal, Model.Params.MaxSpeed, 1.0e-2f);
+		TEST_CHECK(Settled.Speed <= Model.Params.MaxSpeed * 1.001f);
+		TEST_CHECK(Settled.Speed > Model.Params.MaxSpeed * 0.9f);
+
+		const FSailingState Light = SailFor(Model, Beam, 0.0f, 1.0f, WindFromYaw, 0.5f, 120.0f);
+		TEST_NEARLY(Light.Speed, Model.TerminalSpeedForDrive(0.5f), Terminal * 0.03f);
+		TEST_CHECK(Light.Speed < Settled.Speed);
+
+		FSailingState IntoWind;
+		IntoWind.HeadingDegrees = FSailingModel::NormalizeDegrees(WindFromYaw);
+		const FSailingState Stalled = SailFor(Model, IntoWind, 0.0f, 1.0f, WindFromYaw, 1.0f, 30.0f);
+		TEST_CHECK(Stalled.Speed < 1.0f);
+	}
+
+	void TestRudderSign()
+	{
+		BeginTest("Rudder turns the head the expected way, and only with way on");
+
+		FSailingModel Model;
+		const float WindFromYaw = -90.0f;
+
+		FSailingState Making;
+		Making.HeadingDegrees = 0.0f;
+		Making = SailFor(Model, Making, 0.0f, 1.0f, WindFromYaw, 1.0f, 40.0f);
+		TEST_CHECK(Making.Speed > 100.0f);
+
+		const float Before = Making.HeadingDegrees;
+		const FSailingState Port = SailFor(Model, Making, +1.0f, 1.0f, WindFromYaw, 1.0f, 3.0f);
+		const FSailingState Starboard = SailFor(Model, Making, -1.0f, 1.0f, WindFromYaw, 1.0f, 3.0f);
+		TEST_CHECK(Port.HeadingDegrees > Before + 1.0f);
+		TEST_CHECK(Starboard.HeadingDegrees < Before - 1.0f);
+
+		FSailingState Adrift;
+		Adrift.HeadingDegrees = 30.0f;
+		Adrift.Speed = 0.0f;
+		const FSailingState Tried = SailFor(Model, Adrift, 1.0f, 0.0f, WindFromYaw, 0.0f, 2.0f);
+		TEST_NEARLY(Tried.HeadingDegrees, 30.0f, 0.5f);
+	}
+
+	void TestTurnHelpers()
+	{
+		BeginTest("Turn radius and time-to-turn helpers are sane");
+
+		FSailingModel Model;
+
+		TEST_CHECK(Model.PredictTurnRadius(0.0f) > 1.0e9f);
+		TEST_CHECK(Model.EstimateTimeToTurn(90.0f, 0.0f) > 1.0e9f);
+
+		const float Radius = Model.PredictTurnRadius(Model.Params.MaxSpeed);
+		TEST_CHECK(Radius > 0.0f);
+		TEST_CHECK(Radius < 1.0e6f);
+
+		const float QuarterTurn = Model.EstimateTimeToTurn(90.0f, Model.Params.MaxSpeed);
+		TEST_CHECK(QuarterTurn > 0.0f);
+		TEST_NEARLY(Model.EstimateTimeToTurn(180.0f, Model.Params.MaxSpeed), QuarterTurn * 2.0f, 1.0e-3f);
+		TEST_NEARLY(Model.EstimateTimeToTurn(-90.0f, Model.Params.MaxSpeed), QuarterTurn, 1.0e-4f);
+	}
+
+	void TestStableUnderRandomInput()
+	{
+		BeginTest("No NaNs over 10k ticks of random input");
+
+		FSailingModel Model;
+		std::mt19937 Random(0x5A11u);
+		std::uniform_real_distribution<float> Rudder(-1.5f, 1.5f);
+		std::uniform_real_distribution<float> Trim(-0.2f, 1.2f);
+		std::uniform_real_distribution<float> WindFrom(-720.0f, 720.0f);
+		std::uniform_real_distribution<float> Strength(-0.2f, 1.5f);
+		std::uniform_real_distribution<float> Delta(0.001f, 0.5f);
+
+		FSailingState State;
+		State.HeadingDegrees = 10.0f;
+
+		bool bFinite = true;
+		for (int32 Tick = 0; Tick < 10000; ++Tick)
+		{
+			Model.Advance(State, Rudder(Random), Trim(Random), WindFrom(Random), Strength(Random), Delta(Random));
+			bFinite &= std::isfinite(State.HeadingDegrees) && std::isfinite(State.Speed)
+				&& std::isfinite(State.RudderAngleDegrees) && std::isfinite(State.SailTrim);
+			if (!bFinite)
+			{
+				break;
+			}
+		}
+
+		TEST_CHECK(bFinite);
+		TEST_CHECK(State.HeadingDegrees > -180.5f && State.HeadingDegrees <= 180.5f);
+		TEST_CHECK(State.Speed >= 0.0f && State.Speed <= Model.Params.MaxSpeed * 1.01f);
+		TEST_CHECK(FMath::Abs(State.RudderAngleDegrees) <= Model.Params.MaxRudderAngleDegrees + 0.5f);
+		TEST_CHECK(State.SailTrim >= 0.0f && State.SailTrim <= 1.0f);
+	}
 }
 
 int main()
@@ -616,6 +766,12 @@ int main()
 	TestThreatEvaluator();
 	TestBufferReuseAcrossQueries();
 	TestWorldSpaceEntryPoints();
+
+	TestPolarCurve();
+	TestConvergesToBoundedSpeed();
+	TestRudderSign();
+	TestTurnHelpers();
+	TestStableUnderRandomInput();
 
 	std::printf("\n%d checks, %d failures\n", NumChecks, NumFailures);
 	return NumFailures == 0 ? 0 : 1;
