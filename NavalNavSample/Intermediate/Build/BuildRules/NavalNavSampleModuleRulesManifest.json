@@ -1,0 +1,8 @@
+{
+	"SourceFiles": [
+		"C:\\SampleProjects\\naval-navigation-sample\\NavalNavSample\\Source\\NavalNavSample\\NavalNavSample.Build.cs",
+		"C:\\SampleProjects\\naval-navigation-sample\\NavalNavSample\\Source\\NavalNavSample.Target.cs",
+		"C:\\SampleProjects\\naval-navigation-sample\\NavalNavSample\\Source\\NavalNavSampleEditor.Target.cs"
+	],
+	"EngineVersion": "5.5.4"
+}

@@ -1,0 +1,14 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\users\\kaana\\documents\\github\\naval-navigation-sample\\navalnavsample\\source\\navalnavsample\\navalnavsample.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\users\\kaana\\documents\\github\\naval-navigation-sample\\navalnavsample\\intermediate\\build\\win64\\x64\\navalnavsampleeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\users\\kaana\\documents\\github\\naval-navigation-sample\\navalnavsample\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\navalnavsample\\definitions.navalnavsample.h",
+            "c:\\users\\kaana\\documents\\github\\naval-navigation-sample\\navalnavsample\\source\\navalnavsample\\navalnavsample.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}
