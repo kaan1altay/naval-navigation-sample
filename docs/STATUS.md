@@ -1,9 +1,9 @@
 # Project status
 
-_Last updated: 2026-08-17 — end of Slice 3._
+_Last updated: 2026-08-18 — end of Slice 4. **Feature-complete; the code is now frozen for polish.**_
 
-> **Now building on Windows.** Slices 1–3 compile with UE 5.5 + Visual Studio 2022
-> (MSVC 14.44) via Unreal Build Tool, and all **18 automation tests pass in-engine**
+> **Now building on Windows.** Slices 1–4 compile with UE 5.5 + Visual Studio 2022
+> (MSVC 14.44) via Unreal Build Tool, and all **26 automation tests pass in-engine**
 > (`Automation RunTests NavalNav`, headless, `-nullrhi`). The Linux notes below are the
 > history of how Slice 1 was first authored; they no longer describe the only place the code
 > has run.
@@ -207,11 +207,88 @@ make the wind matter and keep the helmsman readable; full VMG beating is out of 
 sample. Everything else (look-ahead, turn-in, waypoint advance, arrival) is exercised by the
 closed-loop test that sails a zigzag to its goal over 10k ticks.
 
+## What is implemented — Slice 4: replanning, escape, dynamic zones, demo scenarios
+
+```
+Source/NavalNav/
+  Navigation/ReplanPolicy.{h,cpp}          FReplanPolicy, FReplanPolicyParams, EReplanReason
+  Navigation/NavalNavigatorComponent.{h,cpp}  + replanning, Escaping state, event subscriptions
+  Grid/SeaGrid.{h,cpp}                      + OnThreatChanged, GetObserverCellCost, FindEscapeTarget
+  Grid/SeaGridPathfinder.{h,cpp}            + FindNearestCellBelowCost (engine-free ring search)
+  Threat/DangerZone.{h,cpp}                 + Static/Patrol/Orbit movement, change events, disc visual
+  Demo/*                                    + self-sufficient environment, five scenarios, controls
+  Tests/ReplanPolicyTest.cpp                8 automation tests
+```
+
+**Demo presentation (the play-test fix).** Before Slice 4 proper, the demo was a black void: no
+lighting, no water, invisible ships, and the grid overlay drew nothing because it depended on a
+placed debug actor. The GameMode now spawns a sun + `SkyAtmosphere` + `SkyLight` and a large blue
+sea plane, ships carry a lit per-ship colour (flagship gold, escorts grey-blue), danger zones show
+a coloured disc (amber → red by power), and the GameMode draws the grid overlay itself. So **New
+Empty Level → Play** is watchable with no imported assets.
+
+**Replanning.** `FReplanPolicy` is a plain, engine-free struct that decides *when* a route is
+stale — the pathfinder still owns *how* to route. Five triggers, each individually toggleable and
+tunable:
+
+- **Off-route** — cross-track distance beyond `OffRouteDistance` for longer than `OffRouteGraceSeconds`;
+- **Path blocked** — a cell on the remaining path is now blocking *for this ship's power*, scanned
+  at `PathCheckInterval` through an injected cost sampler (never per-frame A\*);
+- **Threat changed** — a zone moved or changed power within `RelevanceRadius` of the ship or its
+  remaining route (event-driven, from the grid's `OnThreatChanged`);
+- **Power changed** — this ship's own `UShipPowerComponent` fired `OnPowerChanged`;
+- **Periodic** — a cheap backstop once the path is older than `MaxPathAge`.
+
+`MinReplanInterval` is the storm-guard: many triggers in a window cost one A\* (a 100-event jitter
+storm collapses to ~10 replans in the tests). The navigator replans **without stopping** — the new
+route is planned from the ship's current position and spliced in, so the helmsman's fresh waypoint
+1 is already ahead of the bow (no reset-to-start jerk) — and a still-valid route is only replaced
+for one cheaper than `old × ImprovementCostRatio`.
+
+**Escape.** When the observer cost at the ship's own cell rises past `EscapeCostThreshold` (a zone
+drifted onto it, or its power dropped), the navigator goes `Following → Escaping`: a bounded
+outward ring search (`FSeaGridPathfinder::FindNearestCellBelowCost`, rated for this ship's power)
+finds the nearest open-water cell within `EscapeSearchRadius`, or — if the ship is fully boxed in —
+the **least-bad passable cell**, i.e. the exit through the weakest part of the enclosure. It heads
+there and resumes its original goal the moment it is back in open water. An `OnStateChanged`
+delegate reports every transition.
+
+**Dynamic zones.** `ADangerZone` gained `Static` / `Patrol` / `Orbit` movement and now routes its
+move/power changes through `USeaGridSubsystem::NotifyZoneChanged`, which both marks the threat
+layer dirty (re-stamped at most once per frame, as before) and broadcasts `OnThreatChanged` so
+navigators can react. A per-observer `GetThreatCostAt` lets a ship rate a zone for its own power
+without disturbing the shared stamped layer.
+
+**Demo scenarios.** Number keys **5–9** each reset the world deterministically (seeded):
+
+| Key | Scenario | What to watch |
+| --- | --- | --- |
+| `5` | Baseline | static zones, ships wander between random goals |
+| `6` | Moving zone | a patrolling zone slides across a route → a mid-voyage replan |
+| `7` | Power contrast | weak (blue) and strong (gold) ship, same start/goal → different routes |
+| `8` | Enclosure | a ship ringed by zones with one weak gap → escapes through it |
+| `9` | Power drop | a strong ship crossing a zone; press `P` to weaken it → it re-solves around |
+
+Controls carry over: left-click to move the selected ship, `Tab` to cycle ships, `1`/`2`/`3` to
+toggle the navigator / ship / grid overlays, mouse-wheel to zoom.
+
+**What is tunable** (`FReplanPolicyParams` on the navigator): the five trigger toggles;
+`OffRouteDistance`, `OffRouteGraceSeconds`; `BlockedCostThreshold`, `PathBlockSampleSpacing`,
+`PathCheckInterval`; `RelevanceRadius`; `MinReplanInterval`, `MaxPathAge`, `ImprovementCostRatio`.
+On the navigator: `EscapeCostThreshold`, `EscapeSearchRadius`. On a zone: movement pattern,
+amplitude/period/orbit radius.
+
+**Known simplifications (deliberate).** Replanning is A\* from scratch (with buffer reuse), not an
+incremental repair like D\*-Lite — correct and simple, and cheap enough at the demo's replan rate.
+Escape picks a single target cell and plans to it; it does not continuously re-evaluate the exit
+mid-run beyond the ordinary Following triggers once it is clear. Escape re-entry is guarded only by
+`EscapeCostThreshold` (no explicit cooldown), which is fine because A\* routes the resumed leg
+around the zone; a pathologically moving zone could in principle re-trigger it.
+
 ## Did it compile?
 
-Slices 2 and 3 **compile and their tests pass** on Windows (UE 5.5, VS 2022 / MSVC 14.44); the
-table below is the Slice 1 verification, done before an engine was available. What *was* verified
-then:
+Slices 2–4 **compile and their tests pass** on Windows (UE 5.5, VS 2022 / MSVC 14.44); the table
+below is the Slice 1 verification, done before an engine was available. What *was* verified then:
 
 | Check | Result |
 | --- | --- |
@@ -246,9 +323,9 @@ Covered scenarios (identical in the automation tests and the standalone harness)
 The standalone harness additionally runs a **reference Dijkstra** over the same cost model and
 asserts A\* returns exactly the optimal cost on 12 randomised cost fields with threat blobs.
 
-Slices 2 and 3 added the five sailing and five helmsman scenarios to that same harness
-(`Ship/SailingModel.cpp` and `Navigation/PredictiveHelmsman.cpp` are now in its compile list, and
-the shim's `FMath` grew `Atan2`/`Cos`/`Tan`/degree conversions to feed them). They were **not**
+Slices 2–4 added the sailing, helmsman and replanning/escape scenarios to that same harness
+(`SailingModel.cpp`, `PredictiveHelmsman.cpp` and `ReplanPolicy.cpp` are now in its compile list,
+and the shim's `FMath` grew `Atan2`/`Cos`/`Tan`/degree conversions to feed them). They were **not**
 re-run standalone on the Windows box — it has no POSIX C++ compiler — but the identical cases pass
 as UE automation tests, so the standalone count above is the Slice 1 figure, not the current one.
 
@@ -259,17 +336,15 @@ an otherwise avoidable zone.
 ## What needs attention
 
 1. **Run the demo.** With the demo GameMode set as `GlobalDefaultGameMode`: open the editor, make
-   a **New Empty Level** (or use any level without its own GameMode override) and press **Play**.
-   The fleet, wind and danger zones spawn from code. Left-click the water to send the selected ship
-   there, `Tab` to cycle ships, `1`/`2`/`3` to toggle the navigator / ship / grid overlays. Headless
-   smoke test confirmed the GameMode spawns and plans without warnings, but the *feel* is best
-   judged in a viewport.
-2. **No `.umap` yet.** The demo is spawned from code rather than placed in a level. A hand-authored
-   map with terrain/water and pretty meshes is a Slice 4 nicety; it is not needed to see the system
-   work.
-3. **The tacker does not beat to windward.** A goal placed directly upwind is sailed as one tack
-   plus a bear-away, not a laylined zig-zag (see the Slice 3 simplification note). Fine for the
-   sample; worth knowing before pointing a ship straight into the wind and expecting a beat.
+   a **New Empty Level** (or any level without its own GameMode override) and press **Play**. Use
+   keys **5–9** to pick a scenario (see the table above), left-click to move the selected ship,
+   `Tab` to cycle ships, `1`/`2`/`3` for the overlays, `P` for the power-drop scenario. Headless
+   smoke tests confirm the GameMode spawns, plans and replans without warnings, but the *feel* is
+   best judged in a viewport.
+2. **No `.umap`.** The whole demo is spawned from code, deliberately — nothing to author, nothing to
+   break on clone. A hand-authored map with nicer meshes would be pure polish.
+3. **The tacker does not beat to windward** (Slice 3), and **replanning is A\* from scratch, not
+   incremental** (Slice 4). Both are deliberate; see the per-slice simplification notes.
 4. **`EngineAssociation` is `"5.5"`.** Change it if the target machine has a different version.
 
 ## Roadmap
@@ -282,10 +357,11 @@ an otherwise avoidable zone.
   speed-scaled look-ahead, turn-in prediction from the sailing model's turning circle, no-go-zone
   awareness with a simple tacker, and a navigator component wiring planner to helmsman. A code-only
   demo spawns the whole thing from an empty map.
-- **Slice 4 — replanning triggers + demo map.** Replan on threat-layer change, on drifting off
-  the plan, and on a wind shift that makes the current legs unsailable; hysteresis so a route
-  does not flip every frame. An Escaping state on the navigator for when a ship is boxed in, and
-  a hand-authored demo level tying the slices together. `OnArrived` and the per-ship cost hook are
-  already in place for it.
-- **Later, if worth it:** cost-field flow fields for squadrons, hierarchical planning for
-  larger seas, and moving the search off the game thread.
+- **Slice 4 — replanning, escape, dynamic zones, demo scenarios. _Done._** An engine-free
+  `FReplanPolicy` (off-route / path-blocked / threat-changed / power-changed / periodic, with
+  hysteresis), replan-without-stopping, a `Following → Escaping` state that breaks a boxed-in ship
+  out through the weakest gap, moving zones, and five seeded demo scenarios. **This is the last
+  feature slice: the code is now frozen and further work is polish only.**
+- **Later, if worth it (out of scope for this sample):** incremental replanning (D\*-Lite) instead
+  of A\*-from-scratch, cost-field flow fields for squadrons, hierarchical planning for larger seas,
+  moving the search off the game thread, and full VMG beating to windward.
