@@ -216,6 +216,17 @@ struct FMath
 	static double Pow(double A, double B) { return std::pow(A, B); }
 	static float Sin(float A) { return std::sin(A); }
 	static double Sin(double A) { return std::sin(A); }
+	static float Cos(float A) { return std::cos(A); }
+	static double Cos(double A) { return std::cos(A); }
+	static float Tan(float A) { return std::tan(A); }
+	static double Tan(double A) { return std::tan(A); }
+	static float Atan2(float Y, float X) { return std::atan2(Y, X); }
+	static double Atan2(double Y, double X) { return std::atan2(Y, X); }
+
+	static float DegreesToRadians(float A) { return A * (UE_PI / 180.0f); }
+	static double DegreesToRadians(double A) { return A * (UE_PI / 180.0); }
+	static float RadiansToDegrees(float A) { return A * (180.0f / UE_PI); }
+	static double RadiansToDegrees(double A) { return A * (180.0 / UE_PI); }
 
 	static int32 FloorToInt32(float A) { return static_cast<int32>(std::floor(A)); }
 	static int32 FloorToInt32(double A) { return static_cast<int32>(std::floor(A)); }

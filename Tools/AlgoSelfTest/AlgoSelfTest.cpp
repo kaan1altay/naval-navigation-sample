@@ -10,6 +10,7 @@
 
 #include "Grid/SeaGridPathfinder.h"
 #include "Grid/SeaGridTypes.h"
+#include "Navigation/PredictiveHelmsman.h"
 #include "Ship/SailingModel.h"
 #include "Threat/ThreatEvaluator.h"
 
@@ -749,6 +750,188 @@ namespace
 		TEST_CHECK(FMath::Abs(State.RudderAngleDegrees) <= Model.Params.MaxRudderAngleDegrees + 0.5f);
 		TEST_CHECK(State.SailTrim >= 0.0f && State.SailTrim <= 1.0f);
 	}
+
+	// -------------------------------------------------------------------------------------
+	FNavalPath MakeHelmsmanPath(const std::vector<FVector>& Points)
+	{
+		FNavalPath Path;
+		float Accumulated = 0.0f;
+		for (size_t Index = 0; Index < Points.size(); ++Index)
+		{
+			if (Index > 0)
+			{
+				Accumulated += static_cast<float>(FVector::Dist2D(Points[Index - 1], Points[Index]));
+			}
+			Path.Waypoints.Add(Points[Index]);
+			Path.Costs.Add(Accumulated);
+		}
+		Path.bSuccess = !Points.empty();
+		return Path;
+	}
+
+	void TestHelmsmanStraight()
+	{
+		BeginTest("Helmsman holds a straight line and corrects the right way");
+
+		FPredictiveHelmsman Helmsman;
+		FSailingModelParams Sail;
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), FVector(10000, 0, 0) });
+
+		FHelmsmanInput In;
+		In.ShipLocation = FVector(2000, 0, 0);
+		In.ShipHeadingDeg = 0.0f;
+		In.ShipSpeed = 800.0f;
+		In.WindFromDeg = -90.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, In, Sail, 0.05f);
+		TEST_CHECK(FMath::Abs(Out.RudderInput) < 0.05f);
+		TEST_NEARLY(Out.DesiredHeadingDeg, 0.0f, 1.0f);
+		TEST_CHECK(!Out.bTacking);
+		TEST_CHECK(!Out.bArrived);
+
+		In.ShipHeadingDeg = 10.0f;
+		const FHelmsmanOutput Corrected = Helmsman.Update(Path, In, Sail, 0.05f);
+		TEST_CHECK(Corrected.RudderInput < 0.0f);
+	}
+
+	void TestHelmsmanTurnIn()
+	{
+		BeginTest("Helmsman starts the turn before the corner");
+
+		FSailingModelParams Sail;
+		TEST_NEARLY(FPredictiveHelmsman::TurnInDistance(90.0f, 0.0f, Sail), 0.0f, 1.0e-3f);
+		const float TurnInSlow = FPredictiveHelmsman::TurnInDistance(90.0f, 600.0f, Sail);
+		const float TurnInFast = FPredictiveHelmsman::TurnInDistance(90.0f, 1200.0f, Sail);
+		TEST_CHECK(TurnInSlow > 0.0f);
+		TEST_CHECK(TurnInFast > TurnInSlow + 1.0f);
+		TEST_CHECK(FPredictiveHelmsman::TurnInDistance(120.0f, 1200.0f, Sail)
+			> FPredictiveHelmsman::TurnInDistance(45.0f, 1200.0f, Sail));
+
+		const FNavalPath Path = MakeHelmsmanPath(
+			{ FVector(0, 0, 0), FVector(10000, 0, 0), FVector(10000, 10000, 0) });
+
+		FHelmsmanInput In;
+		In.ShipHeadingDeg = 0.0f;
+		In.ShipSpeed = 1200.0f;
+		In.WindFromDeg = -90.0f;
+
+		{
+			FPredictiveHelmsman Helmsman;
+			In.ShipLocation = FVector(3000, 0, 0);
+			const FHelmsmanOutput Out = Helmsman.Update(Path, In, Sail, 0.05f);
+			TEST_CHECK(FMath::Abs(Out.RudderInput) < 0.05f);
+		}
+		{
+			FPredictiveHelmsman Helmsman;
+			In.ShipLocation = FVector(8500, 0, 0);
+			const FHelmsmanOutput Out = Helmsman.Update(Path, In, Sail, 0.05f);
+			TEST_CHECK(Out.RudderInput > 0.05f);
+			TEST_CHECK(Out.DesiredHeadingDeg > 5.0f);
+		}
+	}
+
+	void TestHelmsmanMissedWaypoint()
+	{
+		BeginTest("Helmsman advances past a missed waypoint without circling");
+
+		FPredictiveHelmsman Helmsman;
+		FSailingModelParams Sail;
+		const FNavalPath Path = MakeHelmsmanPath(
+			{ FVector(0, 0, 0), FVector(5000, 0, 0), FVector(10000, 0, 0) });
+
+		FHelmsmanInput In;
+		In.ShipLocation = FVector(6000, 800, 0);
+		In.ShipHeadingDeg = 0.0f;
+		In.ShipSpeed = 900.0f;
+		In.WindFromDeg = -90.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, In, Sail, 0.05f);
+		TEST_CHECK(Out.ActiveWaypoint == 2);
+		TEST_CHECK(Helmsman.GetActiveWaypoint() == 2);
+
+		bool bStable = true;
+		for (int32 Iteration = 0; Iteration < 100; ++Iteration)
+		{
+			bStable &= (Helmsman.Update(Path, In, Sail, 0.05f).ActiveWaypoint == 2);
+		}
+		TEST_CHECK(bStable);
+	}
+
+	void TestHelmsmanTack()
+	{
+		BeginTest("Helmsman tacks when the course is dead upwind");
+
+		FPredictiveHelmsman Helmsman;
+		FSailingModelParams Sail;
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), FVector(10000, 0, 0) });
+
+		FHelmsmanInput In;
+		In.ShipLocation = FVector(0, 0, 0);
+		In.ShipHeadingDeg = 0.0f;
+		In.ShipSpeed = 600.0f;
+		In.WindFromDeg = 0.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, In, Sail, 0.05f);
+		TEST_CHECK(Out.bTacking);
+		const float TackOffWind = FSailingModel::AngleOffWind(Out.DesiredHeadingDeg, In.WindFromDeg);
+		TEST_CHECK(TackOffWind >= Sail.NoGoAngleDegrees);
+		TEST_CHECK(TackOffWind <= Sail.NoGoAngleDegrees + Helmsman.Params.TackMarginDeg + 1.0f);
+	}
+
+	void TestHelmsmanClosedLoop()
+	{
+		BeginTest("Closed-loop helmsman + sailing model arrives without NaN");
+
+		FPredictiveHelmsman Helmsman;
+		FSailingModel Model;
+		Model.Params.bEnableLeeway = false;
+
+		const std::vector<FVector> Points = {
+			FVector(0, 0, 0), FVector(4000, 3000, 0), FVector(8000, -1000, 0),
+			FVector(12000, 3000, 0), FVector(16000, 0, 0) };
+		const FNavalPath Path = MakeHelmsmanPath(Points);
+		const float WindFromDeg = 180.0f;
+
+		FSailingState State;
+		State.HeadingDegrees = FPredictiveHelmsman::BearingDegrees(Points[0], Points[1]);
+		FVector Position = Points[0];
+		float LastHeading = State.HeadingDegrees;
+
+		const float Dt = 0.05f;
+		bool bArrived = false;
+		bool bFinite = true;
+
+		for (int32 Tick = 0; Tick < 10000 && !bArrived; ++Tick)
+		{
+			FHelmsmanInput In;
+			In.ShipLocation = Position;
+			In.ShipHeadingDeg = State.HeadingDegrees;
+			In.ShipSpeed = State.Speed;
+			In.ShipYawRateDeg = FSailingModel::NormalizeDegrees(State.HeadingDegrees - LastHeading) / Dt;
+			In.WindFromDeg = WindFromDeg;
+			In.WindStrength = 1.0f;
+
+			const FHelmsmanOutput Out = Helmsman.Update(Path, In, Model.Params, Dt);
+			LastHeading = State.HeadingDegrees;
+
+			Model.Advance(State, Out.RudderInput, Out.SailTrim, WindFromDeg, 1.0f, Dt);
+
+			const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
+			Position = Position + FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
+
+			bFinite &= std::isfinite(State.HeadingDegrees) && std::isfinite(State.Speed)
+				&& std::isfinite(Position.X) && std::isfinite(Position.Y);
+			if (!bFinite)
+			{
+				break;
+			}
+			bArrived = Out.bArrived;
+		}
+
+		TEST_CHECK(bFinite);
+		TEST_CHECK(bArrived);
+		TEST_CHECK(FVector::Dist2D(Position, Points.back()) < Helmsman.Params.ArrivalRadius * 1.5f);
+	}
 }
 
 int main()
@@ -772,6 +955,12 @@ int main()
 	TestRudderSign();
 	TestTurnHelpers();
 	TestStableUnderRandomInput();
+
+	TestHelmsmanStraight();
+	TestHelmsmanTurnIn();
+	TestHelmsmanMissedWaypoint();
+	TestHelmsmanTack();
+	TestHelmsmanClosedLoop();
 
 	std::printf("\n%d checks, %d failures\n", NumChecks, NumFailures);
 	return NumFailures == 0 ? 0 : 1;
