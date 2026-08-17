@@ -5,9 +5,11 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "Grid/SeaGridTypes.h"
+#include "Threat/DangerZone.h" // for EZoneMovement, used as a default argument below
 
 #include "NavalNavDemoGameMode.generated.h"
 
+class ASailingShipPawn;
 class UNavalNavigatorComponent;
 
 /**
@@ -70,6 +72,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
 	FLinearColor SeaColor = FLinearColor(0.02f, 0.09f, 0.22f);
 
+	/**
+	 * Tears down the fleet and zones and sets up scenario 5..9 deterministically. Called by the
+	 * demo controller's number keys.
+	 *   5 Baseline      - static zones, ships wander between random goals.
+	 *   6 Moving zone   - a patrolling zone slides across a ship's route -> mid-voyage replan.
+	 *   7 Power contrast- two ships, weak and strong, same start and goal -> different routes.
+	 *   8 Enclosure     - a ship ringed by zones with one weak gap -> escapes through the gap.
+	 *   9 Power drop    - a strong ship crossing a zone; press P to weaken it -> it re-solves around.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Naval|Demo")
+	void StartScenario(int32 Index);
+
+	/** One-line title/help for the current scenario, shown on screen. */
+	const FString& GetScenarioTitle() const { return ScenarioTitle; }
+
 private:
 	/** Re-orders a ship to a fresh random destination when it arrives, so the demo never stops. */
 	UFUNCTION()
@@ -78,12 +95,33 @@ private:
 	/** Spawns a sun, sky and a big sea plane so an empty level is actually visible. */
 	void SpawnEnvironment();
 
-	/** Colours a ship (flagship gold, escorts a cool grey-blue) and returns its power. */
-	float SetupShipAppearanceAndPower(class ASailingShipPawn* Ship, int32 Index) const;
+	/** Destroys every ship and danger zone, ready for a fresh scenario. */
+	void ClearScenarioActors();
 
-	/** A random point within FieldRadius of the grid centre, at sea level. */
-	FVector RandomSeaPoint() const;
+	/** Spawns a hull at Loc with the given power and colour. */
+	ASailingShipPawn* SpawnShip(const FVector& Loc, float Power, const FLinearColor& Color, float HeadingYaw = 0.0f);
+
+	/** Adds a navigator to a ship; optionally binds auto-wander and gives it an initial goal. */
+	UNavalNavigatorComponent* AddNavigator(ASailingShipPawn* Ship, bool bWander, const FVector& InitialGoal);
+
+	/** Spawns a danger zone. */
+	ADangerZone* SpawnZone(const FVector& Loc, float Radius, float Power, EZoneMovement Movement = EZoneMovement::Static);
+
+	/** A random point within FieldRadius of the grid centre, at sea level (seeded, deterministic). */
+	FVector RandomSeaPoint();
 
 	/** Draws the sea-grid cost field around the view when naval.DrawGrid is on (no debug actor needed). */
 	void DrawGridOverlay() const;
+
+	/** Puts the demo controller's camera on the first ship after a scenario is spawned. */
+	void PossessFirstShip();
+
+	/** Deterministic RNG so scenarios reset the same way every time. */
+	FRandomStream DemoRandom;
+
+	/** The scenario currently running (5..9). */
+	int32 CurrentScenario = 5;
+
+	/** On-screen title/help for the current scenario. */
+	FString ScenarioTitle;
 };

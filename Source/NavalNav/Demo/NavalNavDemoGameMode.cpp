@@ -9,10 +9,12 @@
 #include "Components/StaticMeshComponent.h"
 #include "Demo/NavalNavDemoPlayerController.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/Engine.h"
 #include "Engine/SkyLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "Grid/SeaGrid.h"
 #include "Grid/SeaGridDebugDraw.h"
@@ -65,63 +67,27 @@ void ANavalNavDemoGameMode::BeginPlay()
 		Wind->SetWindStrength(WindStrength);
 	}
 
-	// --- Danger zones (biased toward the centre so wandering ships cross them and routes bend) --
-	for (int32 Index = 0; Index < NumDangerZones; ++Index)
-	{
-		const FVector Center(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
-		const FVector At = Center + (RandomSeaPoint() - Center) * 0.6;
+	// Everything else — ships and zones — belongs to a scenario. Start with the baseline.
+	StartScenario(CurrentScenario);
 
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		if (ADangerZone* Zone = World->SpawnActor<ADangerZone>(At, FRotator::ZeroRotator, Params))
-		{
-			Zone->SetRadius(FMath::RandRange(2500.0f, 4500.0f));
-			Zone->SetPowerLevel(FMath::RandRange(2.0f, 4.0f));
-		}
-	}
-
-	// --- Fleet --------------------------------------------------------------------------------
-	for (int32 Index = 0; Index < NumShips; ++Index)
-	{
-		// Spread the ships out so they are not on top of each other at the start.
-		const float Angle = (2.0f * UE_PI * Index) / FMath::Max(1, NumShips);
-		const FVector Center(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
-		const FVector Start = Center + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0) * (FieldRadius * 0.85f);
-
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		ASailingShipPawn* Ship = World->SpawnActor<ASailingShipPawn>(Start, FRotator::ZeroRotator, Params);
-		if (!Ship)
-		{
-			continue;
-		}
-
-		SetupShipAppearanceAndPower(Ship, Index);
-
-		UNavalNavigatorComponent* Navigator = NewObject<UNavalNavigatorComponent>(Ship);
-		Navigator->RegisterComponent();
-
-		if (bAutoWander)
-		{
-			Navigator->OnArrived.AddDynamic(this, &ANavalNavDemoGameMode::OnShipArrived);
-			Navigator->RequestMoveTo(RandomSeaPoint());
-		}
-	}
-
-	// The controller may have run its BeginPlay before the ships existed; point it at one now.
-	if (ANavalNavDemoPlayerController* PC = Cast<ANavalNavDemoPlayerController>(World->GetFirstPlayerController()))
-	{
-		PC->PossessFirstAvailableShip();
-	}
-
-	UE_LOG(LogNavalNav, Log, TEXT("Demo: %d ships, %d danger zones, wind %.0f deg @ %.0f%%."),
-		NumShips, NumDangerZones, WindDirectionYaw, WindStrength * 100.0f);
+	UE_LOG(LogNavalNav, Log, TEXT("Demo up: scenario %d, wind %.0f deg @ %.0f%%."),
+		CurrentScenario, WindDirectionYaw, WindStrength * 100.0f);
 }
 
 void ANavalNavDemoGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
 	DrawGridOverlay();
+
+#if !UE_BUILD_SHIPPING
+	if (GEngine && !ScenarioTitle.IsEmpty())
+	{
+		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0x4E5343) /*NSC*/, 0.0f, FColor::White, ScenarioTitle);
+		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0x4E4B45) /*NKE*/, 0.0f, FColor(180, 200, 255),
+			FString(TEXT("Keys: L-click move | Tab cycle ship | 1 nav 2 ship 3 grid | 5-9 scenarios | P weaken | wheel zoom")));
+	}
+#endif
 }
 
 void ANavalNavDemoGameMode::SpawnEnvironment()
@@ -187,17 +153,196 @@ void ANavalNavDemoGameMode::SpawnEnvironment()
 	}
 }
 
-float ANavalNavDemoGameMode::SetupShipAppearanceAndPower(ASailingShipPawn* Ship, int32 Index) const
+ASailingShipPawn* ANavalNavDemoGameMode::SpawnShip(const FVector& Loc, float Power, const FLinearColor& Color, float HeadingYaw)
 {
-	// The first ship is the flagship: strong enough to ignore the zones the others avoid, and gold
-	// so it is easy to pick out; the escorts are a cool grey-blue.
-	const float Power = (Index == 0) ? FlagshipPower : 1.0f;
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ASailingShipPawn* Ship = World->SpawnActor<ASailingShipPawn>(Loc, FRotator(0.0f, HeadingYaw, 0.0f), Params);
+	if (!Ship)
+	{
+		return nullptr;
+	}
+
 	if (Ship->GetPowerComponent())
 	{
 		Ship->GetPowerComponent()->SetPowerLevel(Power);
 	}
-	Ship->SetHullColor(Index == 0 ? FLinearColor(1.0f, 0.78f, 0.12f) : FLinearColor(0.55f, 0.68f, 0.85f));
-	return Power;
+	Ship->SetHullColor(Color);
+	return Ship;
+}
+
+UNavalNavigatorComponent* ANavalNavDemoGameMode::AddNavigator(ASailingShipPawn* Ship, bool bWander, const FVector& InitialGoal)
+{
+	UNavalNavigatorComponent* Navigator = NewObject<UNavalNavigatorComponent>(Ship);
+	Navigator->RegisterComponent();
+
+	if (bWander)
+	{
+		Navigator->OnArrived.AddDynamic(this, &ANavalNavDemoGameMode::OnShipArrived);
+	}
+	Navigator->RequestMoveTo(InitialGoal);
+	return Navigator;
+}
+
+ADangerZone* ANavalNavDemoGameMode::SpawnZone(const FVector& Loc, float Radius, float Power, EZoneMovement Movement)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ADangerZone* Zone = World->SpawnActor<ADangerZone>(Loc, FRotator::ZeroRotator, Params);
+	if (!Zone)
+	{
+		return nullptr;
+	}
+
+	Zone->MovementPattern = Movement;
+	Zone->SetActorTickEnabled(Movement != EZoneMovement::Static);
+	Zone->SetRadius(Radius);
+	Zone->SetPowerLevel(Power);
+	return Zone;
+}
+
+void ANavalNavDemoGameMode::ClearScenarioActors()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<ASailingShipPawn> It(World); It; ++It)
+	{
+		It->Destroy();
+	}
+	for (TActorIterator<ADangerZone> It(World); It; ++It)
+	{
+		It->Destroy();
+	}
+}
+
+void ANavalNavDemoGameMode::PossessFirstShip()
+{
+	if (ANavalNavDemoPlayerController* PC = Cast<ANavalNavDemoPlayerController>(GetWorld()->GetFirstPlayerController()))
+	{
+		PC->PossessFirstAvailableShip();
+	}
+}
+
+void ANavalNavDemoGameMode::StartScenario(int32 Index)
+{
+	CurrentScenario = FMath::Clamp(Index, 5, 9);
+	ClearScenarioActors();
+	DemoRandom.Initialize(1000 + CurrentScenario); // deterministic reset per scenario
+
+	const FVector C(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
+	const FLinearColor Gold(1.0f, 0.78f, 0.12f);
+	const FLinearColor Blue(0.55f, 0.68f, 0.85f);
+	const FLinearColor Steel(0.72f, 0.75f, 0.80f);
+
+	switch (CurrentScenario)
+	{
+	case 5:
+	default:
+	{
+		ScenarioTitle = TEXT("[5] Baseline - static zones, ships wander between goals");
+		for (int32 i = 0; i < NumDangerZones; ++i)
+		{
+			SpawnZone(C + (RandomSeaPoint() - C) * 0.6, DemoRandom.FRandRange(2500.0f, 4500.0f), DemoRandom.FRandRange(2.0f, 4.0f));
+		}
+		for (int32 i = 0; i < NumShips; ++i)
+		{
+			const float Angle = (2.0f * UE_PI * i) / FMath::Max(1, NumShips);
+			const FVector Start = C + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0) * (FieldRadius * 0.85f);
+			ASailingShipPawn* Ship = SpawnShip(Start, (i == 0) ? FlagshipPower : 1.0f, (i == 0) ? Gold : Blue);
+			if (Ship)
+			{
+				AddNavigator(Ship, /*bWander=*/true, RandomSeaPoint());
+			}
+		}
+		break;
+	}
+	case 6:
+	{
+		ScenarioTitle = TEXT("[6] Moving zone - a patrol slides across the route, forcing a mid-voyage replan");
+		// A ship crossing west-to-east; a zone patrolling north-south straddles the middle of the line.
+		const FVector Start = C + FVector(-FieldRadius, 0.0, 0.0);
+		const FVector Goal = C + FVector(FieldRadius, 0.0, 0.0);
+		ADangerZone* Zone = SpawnZone(C, 3200.0f, 3.0f, EZoneMovement::Patrol);
+		if (Zone)
+		{
+			Zone->MoveAxis = FVector(0.0, 1.0, 0.0);
+			Zone->MoveAmplitude = FieldRadius * 0.5f;
+			Zone->MovePeriod = 16.0f;
+		}
+		if (ASailingShipPawn* Ship = SpawnShip(Start, 1.0f, Blue))
+		{
+			AddNavigator(Ship, /*bWander=*/false, Goal);
+		}
+		break;
+	}
+	case 7:
+	{
+		ScenarioTitle = TEXT("[7] Power contrast - weak (blue) routes around the zone, strong (gold) sails through");
+		const FVector Start = C + FVector(-FieldRadius, -1500.0, 0.0);
+		const FVector Goal = C + FVector(FieldRadius, 1500.0, 0.0);
+		SpawnZone(C, 4000.0f, 3.0f); // squarely on the direct line
+		if (ASailingShipPawn* Weak = SpawnShip(Start, 1.0f, Blue))
+		{
+			AddNavigator(Weak, /*bWander=*/false, Goal);
+		}
+		if (ASailingShipPawn* Strong = SpawnShip(Start + FVector(0.0, 400.0, 0.0), FlagshipPower, Gold))
+		{
+			AddNavigator(Strong, /*bWander=*/false, Goal + FVector(0.0, 400.0, 0.0));
+		}
+		break;
+	}
+	case 8:
+	{
+		ScenarioTitle = TEXT("[8] Enclosure - ringed by zones with one weak gap; the ship escapes through it");
+		// A ring of strong zones with one deliberately weaker, leaving a low-cost exit.
+		const int32 RingCount = 6;
+		const float RingRadius = 6500.0f;
+		for (int32 i = 0; i < RingCount; ++i)
+		{
+			const float Angle = (2.0f * UE_PI * i) / RingCount;
+			const FVector At = C + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0) * RingRadius;
+			const bool bGap = (i == 0);
+			SpawnZone(At, 3200.0f, bGap ? 1.5f : 5.0f);
+		}
+		if (ASailingShipPawn* Ship = SpawnShip(C, 1.0f, Steel))
+		{
+			// Goal well outside the ring; the ship must break out first.
+			AddNavigator(Ship, /*bWander=*/false, C + FVector(FieldRadius, 0.0, 0.0));
+		}
+		break;
+	}
+	case 9:
+	{
+		ScenarioTitle = TEXT("[9] Power drop - strong ship crossing a zone; press P to weaken it and watch it re-solve");
+		const FVector Start = C + FVector(-FieldRadius, 0.0, 0.0);
+		const FVector Goal = C + FVector(FieldRadius, 0.0, 0.0);
+		SpawnZone(C, 4000.0f, 4.0f); // on the direct line
+		if (ASailingShipPawn* Ship = SpawnShip(Start, FlagshipPower, Gold))
+		{
+			AddNavigator(Ship, /*bWander=*/false, Goal);
+		}
+		break;
+	}
+	}
+
+	PossessFirstShip();
+	UE_LOG(LogNavalNav, Log, TEXT("Scenario %d: %s"), CurrentScenario, *ScenarioTitle);
 }
 
 void ANavalNavDemoGameMode::DrawGridOverlay() const
@@ -238,11 +383,11 @@ void ANavalNavDemoGameMode::OnShipArrived(UNavalNavigatorComponent* Navigator)
 	}
 }
 
-FVector ANavalNavDemoGameMode::RandomSeaPoint() const
+FVector ANavalNavDemoGameMode::RandomSeaPoint()
 {
 	const FVector Center(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
 	return Center + FVector(
-		FMath::RandRange(-FieldRadius, FieldRadius),
-		FMath::RandRange(-FieldRadius, FieldRadius),
+		DemoRandom.FRandRange(-FieldRadius, FieldRadius),
+		DemoRandom.FRandRange(-FieldRadius, FieldRadius),
 		0.0);
 }

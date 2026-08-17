@@ -12,9 +12,11 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputTriggers.h"
+#include "Demo/NavalNavDemoGameMode.h"
 #include "NavalNav.h"
 #include "Navigation/NavalNavigatorComponent.h"
 #include "Ship/SailingShipPawn.h"
+#include "Ship/ShipPowerComponent.h"
 
 void ANavalNavDemoPlayerController::EnsureInputAssets()
 {
@@ -36,6 +38,11 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	ShipDebugAction = MakeAction(TEXT("DemoShipDebugAction"), EInputActionValueType::Boolean);
 	GridDebugAction = MakeAction(TEXT("DemoGridDebugAction"), EInputActionValueType::Boolean);
 	ZoomAction = MakeAction(TEXT("DemoZoomAction"), EInputActionValueType::Axis1D);
+	WeakenAction = MakeAction(TEXT("DemoWeakenAction"), EInputActionValueType::Boolean);
+	for (int32 i = 0; i < 5; ++i)
+	{
+		ScenarioActions[i] = MakeAction(*FString::Printf(TEXT("DemoScenario%dAction"), i + 5), EInputActionValueType::Boolean);
+	}
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("DemoMappingContext"));
 	MappingContext->MapKey(ClickAction, EKeys::LeftMouseButton);
@@ -44,6 +51,12 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	MappingContext->MapKey(ShipDebugAction, EKeys::Two);
 	MappingContext->MapKey(GridDebugAction, EKeys::Three);
 	MappingContext->MapKey(ZoomAction, EKeys::MouseWheelAxis);
+	MappingContext->MapKey(WeakenAction, EKeys::P);
+	MappingContext->MapKey(ScenarioActions[0], EKeys::Five);
+	MappingContext->MapKey(ScenarioActions[1], EKeys::Six);
+	MappingContext->MapKey(ScenarioActions[2], EKeys::Seven);
+	MappingContext->MapKey(ScenarioActions[3], EKeys::Eight);
+	MappingContext->MapKey(ScenarioActions[4], EKeys::Nine);
 }
 
 void ANavalNavDemoPlayerController::BeginPlay()
@@ -79,6 +92,12 @@ void ANavalNavDemoPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(ShipDebugAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnToggleShipDebug);
 		EnhancedInput->BindAction(GridDebugAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnToggleGridDebug);
 		EnhancedInput->BindAction(ZoomAction, ETriggerEvent::Triggered, this, &ANavalNavDemoPlayerController::OnZoom);
+		EnhancedInput->BindAction(WeakenAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnWeakenShip);
+		EnhancedInput->BindAction(ScenarioActions[0], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario5);
+		EnhancedInput->BindAction(ScenarioActions[1], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario6);
+		EnhancedInput->BindAction(ScenarioActions[2], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario7);
+		EnhancedInput->BindAction(ScenarioActions[3], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario8);
+		EnhancedInput->BindAction(ScenarioActions[4], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario9);
 	}
 }
 
@@ -162,6 +181,33 @@ void ANavalNavDemoPlayerController::OnZoom(const FInputActionValue& Value)
 	{
 		// Wheel up (positive) pulls the camera in; wheel down pushes it out.
 		Ship->AddCameraZoom(-Value.Get<float>() * 800.0f);
+	}
+}
+
+void ANavalNavDemoPlayerController::OnScenario5(const FInputActionValue& Value) { StartScenario(5); }
+void ANavalNavDemoPlayerController::OnScenario6(const FInputActionValue& Value) { StartScenario(6); }
+void ANavalNavDemoPlayerController::OnScenario7(const FInputActionValue& Value) { StartScenario(7); }
+void ANavalNavDemoPlayerController::OnScenario8(const FInputActionValue& Value) { StartScenario(8); }
+void ANavalNavDemoPlayerController::OnScenario9(const FInputActionValue& Value) { StartScenario(9); }
+
+void ANavalNavDemoPlayerController::StartScenario(int32 Index)
+{
+	if (ANavalNavDemoGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ANavalNavDemoGameMode>() : nullptr)
+	{
+		GameMode->StartScenario(Index);
+	}
+}
+
+void ANavalNavDemoPlayerController::OnWeakenShip(const FInputActionValue& Value)
+{
+	// Scenario 9's payoff: knock the selected ship's power down and let the navigator react.
+	if (ASailingShipPawn* Ship = Cast<ASailingShipPawn>(GetPawn()))
+	{
+		if (UShipPowerComponent* Power = Ship->GetPowerComponent())
+		{
+			Power->SetPowerLevel(1.0f);
+			UE_LOG(LogNavalNav, Log, TEXT("Weakened %s to power 1.0"), *Ship->GetName());
+		}
 	}
 }
 

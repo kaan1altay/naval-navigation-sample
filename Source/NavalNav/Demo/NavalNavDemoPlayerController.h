@@ -48,6 +48,15 @@ private:
 	void OnToggleShipDebug(const FInputActionValue& Value);
 	void OnToggleGridDebug(const FInputActionValue& Value);
 	void OnZoom(const FInputActionValue& Value);
+	void OnScenario5(const FInputActionValue& Value);
+	void OnScenario6(const FInputActionValue& Value);
+	void OnScenario7(const FInputActionValue& Value);
+	void OnScenario8(const FInputActionValue& Value);
+	void OnScenario9(const FInputActionValue& Value);
+	void OnWeakenShip(const FInputActionValue& Value);
+
+	/** Starts a scenario on the demo GameMode. */
+	void StartScenario(int32 Index);
 
 	/** Rebuilds the ship list and possesses the ship at Index (for its chase cam). */
 	void PossessShipAtIndex(int32 Index);
@@ -72,6 +81,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ZoomAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ScenarioActions[5];
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> WeakenAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> MappingContext;
