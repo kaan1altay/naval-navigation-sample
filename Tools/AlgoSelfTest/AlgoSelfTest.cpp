@@ -11,6 +11,7 @@
 #include "Grid/SeaGridPathfinder.h"
 #include "Grid/SeaGridTypes.h"
 #include "Navigation/PredictiveHelmsman.h"
+#include "Navigation/ReplanPolicy.h"
 #include "Ship/SailingModel.h"
 #include "Threat/ThreatEvaluator.h"
 
@@ -932,6 +933,144 @@ namespace
 		TEST_CHECK(bArrived);
 		TEST_CHECK(FVector::Dist2D(Position, Points.back()) < Helmsman.Params.ArrivalRadius * 1.5f);
 	}
+
+	// -------------------------------------------------------------------------------------
+	void TestReplanOffRoute()
+	{
+		BeginTest("Off-route replan respects the grace time");
+
+		FReplanPolicy Policy;
+		Policy.Params.bEnablePathBlocked = false;
+		Policy.Params.bEnableThreatChanged = false;
+		Policy.Params.bEnablePowerChanged = false;
+		Policy.Params.bEnablePeriodic = false;
+		Policy.Params.OffRouteDistance = 1500.0f;
+		Policy.Params.OffRouteGraceSeconds = 1.5f;
+		Policy.Params.MinReplanInterval = 1.0f;
+
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), FVector(10000, 0, 0) });
+		auto OpenWater = [](const FVector&) { return NavalNav::OpenWaterCost; };
+
+		FReplanSituation Sit;
+		Sit.DeltaSeconds = 0.1f;
+		Sit.bFollowing = true;
+		Sit.ShipLocation = FVector(5000, 2000, 0);
+		Sit.Path = &Path;
+		Sit.ActiveWaypoint = 1;
+
+		bool bEarly = false;
+		for (int32 Tick = 0; Tick < 12; ++Tick) { bEarly |= Policy.Evaluate(Sit, OpenWater).bShouldReplan; }
+		TEST_CHECK(!bEarly);
+
+		bool bAfter = false;
+		for (int32 Tick = 0; Tick < 6; ++Tick) { bAfter |= Policy.Evaluate(Sit, OpenWater).bShouldReplan; }
+		TEST_CHECK(bAfter);
+		TEST_CHECK(Policy.GetLastReason() == EReplanReason::OffRoute);
+	}
+
+	void TestReplanBlockedPerShip()
+	{
+		BeginTest("Path-blocked replan is per-ship");
+
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), FVector(10000, 0, 0) });
+		FReplanSituation Sit;
+		Sit.DeltaSeconds = 0.5f;
+		Sit.bFollowing = true;
+		Sit.ShipLocation = FVector(0, 0, 0);
+		Sit.Path = &Path;
+		Sit.ActiveWaypoint = 1;
+
+		auto WeakCost = [](const FVector& P)
+		{
+			return (P.X > 4000.0 && P.X < 6000.0) ? NavalNav::ImpassableCost : NavalNav::OpenWaterCost;
+		};
+		auto StrongCost = [](const FVector&) { return NavalNav::OpenWaterCost; };
+
+		FReplanPolicy Weak;
+		Weak.Params.bEnableOffRoute = false;
+		Weak.Params.bEnableThreatChanged = false;
+		Weak.Params.bEnablePowerChanged = false;
+		Weak.Params.bEnablePeriodic = false;
+		const FReplanDecision WeakDecision = Weak.Evaluate(Sit, WeakCost);
+		TEST_CHECK(WeakDecision.bShouldReplan);
+		TEST_CHECK(WeakDecision.Reason == EReplanReason::PathBlocked);
+
+		FReplanPolicy Strong;
+		Strong.Params.bEnableOffRoute = false;
+		Strong.Params.bEnableThreatChanged = false;
+		Strong.Params.bEnablePowerChanged = false;
+		Strong.Params.bEnablePeriodic = false;
+		TEST_CHECK(!Strong.Evaluate(Sit, StrongCost).bShouldReplan);
+	}
+
+	void TestReplanHysteresis()
+	{
+		BeginTest("Hysteresis collapses a jitter storm into a few replans");
+
+		FReplanPolicy Policy;
+		Policy.Params.bEnableOffRoute = false;
+		Policy.Params.bEnablePathBlocked = false;
+		Policy.Params.bEnablePowerChanged = false;
+		Policy.Params.bEnablePeriodic = false;
+		Policy.Params.MinReplanInterval = 1.0f;
+
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), FVector(10000, 0, 0) });
+		auto OpenWater = [](const FVector&) { return NavalNav::OpenWaterCost; };
+
+		FReplanSituation Sit;
+		Sit.DeltaSeconds = 0.1f;
+		Sit.bFollowing = true;
+		Sit.ShipLocation = FVector(3000, 0, 0);
+		Sit.Path = &Path;
+		Sit.ActiveWaypoint = 1;
+
+		for (int32 Tick = 0; Tick < 100; ++Tick)
+		{
+			Policy.NotifyThreatChanged();
+			Policy.Evaluate(Sit, OpenWater);
+		}
+		TEST_CHECK(Policy.GetReplanCount() <= 12);
+		TEST_CHECK(Policy.GetReplanCount() >= 8);
+	}
+
+	void TestReplanRelevance()
+	{
+		BeginTest("Relevance filter ignores distant changes; cross-track is measured to the leg");
+
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), FVector(20000, 0, 0) });
+		const FVector Ship(1000, 0, 0);
+		TEST_CHECK(FReplanPolicy::IsChangeRelevant(FVector(10000, 500, 0), 2000.0f, Ship, Path, 1, 6000.0f));
+		TEST_CHECK(!FReplanPolicy::IsChangeRelevant(FVector(10000, 40000, 0), 2000.0f, Ship, Path, 1, 6000.0f));
+		TEST_NEARLY(FReplanPolicy::CrossTrackDistance(Path, 1, FVector(5000, 1200, 0)), 1200.0f, 1.0f);
+	}
+
+	void TestEscapeSearch()
+	{
+		BeginTest("Escape search finds the nearest safe cell, or the least-bad exit when enclosed");
+
+		FSeaGridData Grid = MakeGrid(60);
+		const FIntPoint Origin(30, 30);
+
+		auto NearCost = [Origin](const FIntPoint& Cell)
+		{
+			const int32 Cheb = FMath::Max(FMath::Abs(Cell.X - Origin.X), FMath::Abs(Cell.Y - Origin.Y));
+			return Cheb <= 5 ? 40.0f : NavalNav::OpenWaterCost;
+		};
+		FIntPoint Out;
+		TEST_CHECK(FSeaGridPathfinder::FindNearestCellBelowCost(Grid, Origin, NearCost, NavalNav::OpenWaterCost + 0.01f, 30, Out));
+		TEST_CHECK(NearCost(Out) <= NavalNav::OpenWaterCost + 0.01f);
+		TEST_CHECK(FMath::Max(FMath::Abs(Out.X - Origin.X), FMath::Abs(Out.Y - Origin.Y)) == 6);
+
+		auto EnclosedCost = [Origin](const FIntPoint& Cell)
+		{
+			const bool bGap = (Cell.X > Origin.X) && (FMath::Abs(Cell.Y - Origin.Y) <= 1);
+			return bGap ? 20.0f : 50.0f;
+		};
+		FIntPoint OutEnclosed;
+		TEST_CHECK(FSeaGridPathfinder::FindNearestCellBelowCost(Grid, Origin, EnclosedCost, NavalNav::OpenWaterCost + 0.01f, 8, OutEnclosed));
+		TEST_CHECK(OutEnclosed.X > Origin.X);
+		TEST_NEARLY(EnclosedCost(OutEnclosed), 20.0f, 1.0e-3f);
+	}
 }
 
 int main()
@@ -961,6 +1100,12 @@ int main()
 	TestHelmsmanMissedWaypoint();
 	TestHelmsmanTack();
 	TestHelmsmanClosedLoop();
+
+	TestReplanOffRoute();
+	TestReplanBlockedPerShip();
+	TestReplanHysteresis();
+	TestReplanRelevance();
+	TestEscapeSearch();
 
 	std::printf("\n%d checks, %d failures\n", NumChecks, NumFailures);
 	return NumFailures == 0 ? 0 : 1;

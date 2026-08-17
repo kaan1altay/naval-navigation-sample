@@ -21,6 +21,7 @@ mkdir -p "${OUT_DIR}"
 	"${REPO_ROOT}/Source/NavalNav/Grid/SeaGridTypes.cpp" \
 	"${REPO_ROOT}/Source/NavalNav/Grid/SeaGridPathfinder.cpp" \
 	"${REPO_ROOT}/Source/NavalNav/Navigation/PredictiveHelmsman.cpp" \
+	"${REPO_ROOT}/Source/NavalNav/Navigation/ReplanPolicy.cpp" \
 	"${REPO_ROOT}/Source/NavalNav/Ship/SailingModel.cpp" \
 	"${REPO_ROOT}/Source/NavalNav/Threat/ThreatEvaluator.cpp" \
 	-o "${OUT_DIR}/AlgoSelfTest"
