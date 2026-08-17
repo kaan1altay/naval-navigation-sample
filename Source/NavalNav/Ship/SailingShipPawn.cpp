@@ -5,12 +5,14 @@
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Ship/SailingShipConfig.h"
 #include "Ship/ShipPowerComponent.h"
 #include "Ship/WindSubsystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -29,12 +31,22 @@ ASailingShipPawn::ASailingShipPawn()
 	ShipRoot = CreateDefaultSubobject<USceneComponent>(TEXT("ShipRoot"));
 	SetRootComponent(ShipRoot);
 
-	// A visual only, and optional: no mesh is set, so the ship is invisible until a level assigns
-	// one. It never collides — this pawn is moved kinematically, not swept.
+	// A visual only. It never collides — this pawn is moved kinematically, not swept.
 	HullMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HullMesh"));
 	HullMesh->SetupAttachment(ShipRoot);
 	HullMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HullMesh->SetGenerateOverlapEvents(false);
+
+	// Give the ship a visible default hull from an engine primitive, so it shows up in an empty
+	// map with no external assets. A cone's apex points +Z; pitching it -90 aims it along +X, the
+	// ship's forward, and the scale stretches it into a rough hull. Any level can swap the mesh.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
+	if (ConeMesh.Succeeded())
+	{
+		HullMesh->SetStaticMesh(ConeMesh.Object);
+		HullMesh->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
+		HullMesh->SetRelativeScale3D(FVector(0.7, 0.7, 2.5));
+	}
 
 	// Chase cam over the transom. The boom hangs off the root, so it inherits the ship's yaw and
 	// stays behind the stern as she turns, without any per-frame camera code.
