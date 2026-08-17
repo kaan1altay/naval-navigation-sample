@@ -13,6 +13,18 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 struct FSeaGridData;
 
+/** How a danger zone moves, for demonstrating mid-voyage replans. */
+UENUM(BlueprintType)
+enum class EZoneMovement : uint8
+{
+	/** Fixed in place. */
+	Static,
+	/** Slides back and forth along MoveAxis, +/- MoveAmplitude around its placed location. */
+	Patrol,
+	/** Circles its placed location at OrbitRadius. */
+	Orbit
+};
+
 /**
  * A patch of sea that a ship would rather not sail through: a shore battery, a hostile
  * squadron, a reef under fire.
@@ -64,6 +76,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Naval|Threat")
 	void SetPowerLevel(float NewPowerLevel);
 
+	/**
+	 * This zone's threat contribution at a world point for a given observer, computed the same way
+	 * StampThreat stamps it. Lets a ship rate its own danger without touching the shared grid layer.
+	 */
+	float GetThreatCostAt(const FVector& WorldPoint, float ObserverPowerLevel, float InHostilityThreshold) const;
+
 	/** How far the danger reaches, in world units. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Naval|Threat", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float Radius = 3000.0f;
@@ -84,20 +102,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float LethalRadiusFraction = 0.25f;
 
-	/** Drives the zone back and forth so replanning can be demonstrated without gameplay. */
+	/** How the zone moves. Patrol/Orbit exist so a mid-voyage replan can be demonstrated. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement")
-	bool bMoves = false;
+	EZoneMovement MovementPattern = EZoneMovement::Static;
 
-	/** Direction of the demo movement in world space; normalised on BeginPlay. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "bMoves"))
+	/** Direction of a Patrol in world space; normalised on BeginPlay. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "MovementPattern == EZoneMovement::Patrol"))
 	FVector MoveAxis = FVector(0.0, 1.0, 0.0);
 
-	/** Peak offset from the placed location, in world units. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "bMoves", ClampMin = "0.0"))
+	/** Peak offset from the placed location for a Patrol, in world units. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "MovementPattern == EZoneMovement::Patrol", ClampMin = "0.0"))
 	float MoveAmplitude = 5000.0f;
 
-	/** Seconds for one full there-and-back cycle. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "bMoves", ClampMin = "0.1"))
+	/** Radius of an Orbit around the placed location, in world units. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "MovementPattern == EZoneMovement::Orbit", ClampMin = "0.0"))
+	float OrbitRadius = 5000.0f;
+
+	/** Seconds for one full cycle (there-and-back for Patrol, one revolution for Orbit). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Threat|Movement", meta = (EditCondition = "MovementPattern != EZoneMovement::Static", ClampMin = "0.1"))
 	float MovePeriod = 20.0f;
 
 private:

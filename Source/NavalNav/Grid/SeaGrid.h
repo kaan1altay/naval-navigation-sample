@@ -11,6 +11,10 @@
 
 class ADangerZone;
 
+/** Broadcast when a danger zone moves or changes power. Carries the change's location and radius
+ *  so a listener can cheaply decide whether it is close enough to its route to care. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnSeaGridThreatChanged, const FVector& /*Location*/, float /*Radius*/);
+
 /**
  * World-scoped owner of the sea grid.
  *
@@ -73,6 +77,28 @@ public:
 
 	/** Called by danger zones when their footprint changed; the layer is re-stamped lazily. */
 	void MarkThreatDirty() { bThreatDirty = true; }
+
+	/** Marks the threat layer dirty and tells listeners a zone at Location/Radius changed. */
+	void NotifyZoneChanged(const FVector& Location, float Radius);
+
+	/** Fires whenever a registered zone moves or changes power. Navigators subscribe to trigger replans. */
+	FOnSeaGridThreatChanged OnThreatChanged;
+
+	/**
+	 * Traversal cost (base + threat) at a world point for a *specific* observer, computed directly
+	 * from the registered zones without touching the shared stamped layer. This is what a ship uses
+	 * to reason about its own danger, since the stamped layer may currently be stamped for another
+	 * ship's power.
+	 */
+	float GetObserverCellCost(const FVector& WorldLocation, float ObserverPowerLevel, float InHostilityThreshold) const;
+
+	/**
+	 * Bounded outward search for somewhere safer to be. Returns the nearest cell whose observer
+	 * cost is open water; failing that, the least-bad passable cell found within SearchRadius (the
+	 * lowest-cost exit when a ship is boxed in). Returns false only if no passable cell exists at all.
+	 */
+	bool FindEscapeTarget(const FVector& From, float ObserverPowerLevel, float InHostilityThreshold,
+		float SearchRadius, FVector& OutTarget) const;
 
 	/** Re-stamps the threat layer from all registered zones if anything changed since last time. */
 	void EnsureThreatUpToDate();

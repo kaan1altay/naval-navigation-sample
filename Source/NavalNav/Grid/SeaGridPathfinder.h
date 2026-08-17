@@ -94,6 +94,18 @@ struct NAVALNAV_API FSeaGridPathfinder
 	static bool SampleSegment(const FSeaGridData& Grid, FCellCostFunc CostFunc,
 		const FIntPoint& From, const FIntPoint& To, float& OutCost);
 
+	/**
+	 * Bounded outward ring search for the nearest passable cell whose cost is at or below
+	 * AcceptCost. If none is found within MaxRing rings, returns the least-cost passable cell seen
+	 * instead — the least-bad exit when a ship is boxed in. Returns false only when there is no
+	 * passable cell at all. Impassable cells (land, lethal cores) are never returned.
+	 *
+	 * This is how a ship finds its way out of hostile water: run it with a cost functor that rates
+	 * cells for that ship's own power.
+	 */
+	static bool FindNearestCellBelowCost(const FSeaGridData& Grid, const FIntPoint& Origin,
+		FCellCostFunc CostFunc, float AcceptCost, int32 MaxRing, FIntPoint& OutCell);
+
 	/** Frees the scratch buffers. Only worth calling when a level is being torn down. */
 	void ReleaseBuffers();
 

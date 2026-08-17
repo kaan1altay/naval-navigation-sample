@@ -112,7 +112,7 @@ void ADangerZone::BeginPlay()
 	}
 
 	// Only moving zones need a tick; a static battery costs nothing per frame.
-	SetActorTickEnabled(bMoves);
+	SetActorTickEnabled(MovementPattern != EZoneMovement::Static);
 
 	UpdateZoneVisual();
 
@@ -142,11 +142,16 @@ void ADangerZone::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (bMoves)
+	const float Period = FMath::Max(MovePeriod, UE_KINDA_SMALL_NUMBER);
+	const float Theta = 2.0f * UE_PI * GetWorld()->GetTimeSeconds() / Period;
+
+	if (MovementPattern == EZoneMovement::Patrol)
 	{
-		const float Period = FMath::Max(MovePeriod, UE_KINDA_SMALL_NUMBER);
-		const float Phase = FMath::Sin(2.0f * UE_PI * GetWorld()->GetTimeSeconds() / Period);
-		SetActorLocation(HomeLocation + MoveAxis * (MoveAmplitude * Phase));
+		SetActorLocation(HomeLocation + MoveAxis * (MoveAmplitude * FMath::Sin(Theta)));
+	}
+	else if (MovementPattern == EZoneMovement::Orbit)
+	{
+		SetActorLocation(HomeLocation + FVector(FMath::Cos(Theta), FMath::Sin(Theta), 0.0) * OrbitRadius);
 	}
 
 	NotifyGridIfMoved();
@@ -173,8 +178,22 @@ void ADangerZone::NotifyGridIfMoved()
 	if (FVector::DistSquared2D(GetActorLocation(), LastStampedLocation) >= Threshold * Threshold)
 	{
 		LastStampedLocation = GetActorLocation();
-		SeaGrid->MarkThreatDirty();
+		SeaGrid->NotifyZoneChanged(GetActorLocation(), Radius);
 	}
+}
+
+float ADangerZone::GetThreatCostAt(const FVector& WorldPoint, float ObserverPowerLevel, float InHostilityThreshold) const
+{
+	if (Radius <= 0.0f || !FThreatEvaluator::IsHostile(ObserverPowerLevel, PowerLevel, InHostilityThreshold))
+	{
+		return 0.0f;
+	}
+
+	// Identical scaling to StampThreat, so a ship's self-assessment matches what the planner saw.
+	const float Relative = FMath::Min(FThreatEvaluator::RelativeThreat(ObserverPowerLevel, PowerLevel), MaxRelativeThreat);
+	const float ThreatScale = MaxThreatCost * (1.0f + Relative);
+	const float Distance = static_cast<float>(FVector::Dist2D(GetActorLocation(), WorldPoint));
+	return FThreatEvaluator::CellThreatCost(Distance, Radius, ThreatScale, FalloffExponent, LethalRadiusFraction);
 }
 
 void ADangerZone::StampThreat(FSeaGridData& Grid, float ObserverPowerLevel, float HostilityThreshold) const
@@ -214,7 +233,7 @@ void ADangerZone::SetRadius(float NewRadius)
 	{
 		if (USeaGridSubsystem* SeaGrid = World->GetSubsystem<USeaGridSubsystem>())
 		{
-			SeaGrid->MarkThreatDirty();
+			SeaGrid->NotifyZoneChanged(GetActorLocation(), Radius);
 		}
 	}
 }
@@ -228,7 +247,7 @@ void ADangerZone::SetPowerLevel(float NewPowerLevel)
 	{
 		if (USeaGridSubsystem* SeaGrid = World->GetSubsystem<USeaGridSubsystem>())
 		{
-			SeaGrid->MarkThreatDirty();
+			SeaGrid->NotifyZoneChanged(GetActorLocation(), Radius);
 		}
 	}
 }

@@ -80,6 +80,71 @@ bool FSeaGridPathfinder::SampleSegment(const FSeaGridData& Grid, FCellCostFunc C
 	return true;
 }
 
+bool FSeaGridPathfinder::FindNearestCellBelowCost(const FSeaGridData& Grid, const FIntPoint& Origin,
+	FCellCostFunc CostFunc, float AcceptCost, int32 MaxRing, FIntPoint& OutCell)
+{
+	if (!Grid.IsBuilt())
+	{
+		return false;
+	}
+
+	bool bHaveBest = false;
+	float BestCost = TNumericLimits<float>::Max();
+	FIntPoint BestCell = Origin;
+
+	// Returns true when Cell is acceptable (nearest-safe found); otherwise records the least-cost
+	// passable cell, which is the fallback exit when nothing acceptable is in range.
+	auto Consider = [&](const FIntPoint& Cell) -> bool
+	{
+		if (!Grid.IsValidCell(Cell))
+		{
+			return false;
+		}
+		const float Cost = CostFunc(Cell);
+		if (Cost >= NavalNav::ImpassableCost)
+		{
+			return false; // land or a lethal core is never a valid target
+		}
+		if (Cost <= AcceptCost)
+		{
+			OutCell = Cell;
+			return true;
+		}
+		if (Cost < BestCost)
+		{
+			BestCost = Cost;
+			BestCell = Cell;
+			bHaveBest = true;
+		}
+		return false;
+	};
+
+	if (Consider(Origin))
+	{
+		return true;
+	}
+	for (int32 Ring = 1; Ring <= MaxRing; ++Ring)
+	{
+		for (int32 DX = -Ring; DX <= Ring; ++DX)
+		{
+			if (Consider(FIntPoint(Origin.X + DX, Origin.Y - Ring))) { return true; }
+			if (Consider(FIntPoint(Origin.X + DX, Origin.Y + Ring))) { return true; }
+		}
+		for (int32 DY = -Ring + 1; DY <= Ring - 1; ++DY)
+		{
+			if (Consider(FIntPoint(Origin.X - Ring, Origin.Y + DY))) { return true; }
+			if (Consider(FIntPoint(Origin.X + Ring, Origin.Y + DY))) { return true; }
+		}
+	}
+
+	if (bHaveBest)
+	{
+		OutCell = BestCell; // least-bad exit through the weakest part of the enclosure
+		return true;
+	}
+	return false;
+}
+
 void FSeaGridPathfinder::ReleaseBuffers()
 {
 	GScore.Empty();

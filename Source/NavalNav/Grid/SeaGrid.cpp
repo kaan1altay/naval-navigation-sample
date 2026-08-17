@@ -117,3 +117,64 @@ FNavalPath USeaGridSubsystem::FindPath(const FVector& Start, const FVector& Goal
 	EnsureThreatUpToDate();
 	return Pathfinder.FindPathWorld(Grid, Start, Goal, Query);
 }
+
+void USeaGridSubsystem::NotifyZoneChanged(const FVector& Location, float Radius)
+{
+	bThreatDirty = true;
+	OnThreatChanged.Broadcast(Location, Radius);
+}
+
+float USeaGridSubsystem::GetObserverCellCost(const FVector& WorldLocation, float ObserverPower, float InHostilityThreshold) const
+{
+	const FIntPoint Cell = Grid.WorldToCell(WorldLocation);
+	if (!Grid.IsValidCell(Cell))
+	{
+		return NavalNav::ImpassableCost;
+	}
+
+	float Cost = Grid.GetBaseCost(Cell);
+	if (Cost >= NavalNav::ImpassableCost)
+	{
+		return Cost; // land: no point summing zones on top of infinity
+	}
+
+	// Sum every registered zone's contribution for THIS observer, straight from the zones rather
+	// than the shared stamped layer (which may be stamped for a different ship right now).
+	for (const TWeakObjectPtr<ADangerZone>& ZonePtr : DangerZones)
+	{
+		if (const ADangerZone* Zone = ZonePtr.Get())
+		{
+			Cost += Zone->GetThreatCostAt(WorldLocation, ObserverPower, InHostilityThreshold);
+		}
+	}
+	return Cost;
+}
+
+bool USeaGridSubsystem::FindEscapeTarget(const FVector& From, float ObserverPower, float InHostilityThreshold,
+	float SearchRadius, FVector& OutTarget) const
+{
+	if (!Grid.IsBuilt())
+	{
+		return false;
+	}
+
+	const float CellSize = FMath::Max(Grid.GetCellSize(), 1.0f);
+	const int32 MaxRing = FMath::Clamp(FMath::CeilToInt32(SearchRadius / CellSize), 1, 80);
+	const float SafeCost = NavalNav::OpenWaterCost + 0.01f;
+
+	// The ring search is a shared, engine-free grid utility; here it is fed a cost functor that
+	// rates each cell for THIS ship's power, straight from the zones.
+	FIntPoint OutCell;
+	const bool bFound = FSeaGridPathfinder::FindNearestCellBelowCost(Grid, Grid.WorldToCell(From),
+		[this, ObserverPower, InHostilityThreshold](const FIntPoint& Cell)
+		{
+			return GetObserverCellCost(Grid.CellToWorld(Cell), ObserverPower, InHostilityThreshold);
+		},
+		SafeCost, MaxRing, OutCell);
+
+	if (bFound)
+	{
+		OutTarget = Grid.CellToWorld(OutCell);
+	}
+	return bFound;
+}
