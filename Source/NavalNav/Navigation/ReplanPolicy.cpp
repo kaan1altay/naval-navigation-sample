@@ -4,7 +4,7 @@
 
 namespace
 {
-	double Dot2D(const FVector& A, const FVector& B)
+	double ReplanDot2D(const FVector& A, const FVector& B)
 	{
 		return A.X * B.X + A.Y * B.Y;
 	}
@@ -13,12 +13,12 @@ namespace
 	float DistanceToSegment2D(const FVector& Point, const FVector& A, const FVector& B)
 	{
 		const FVector Segment = B - A;
-		const double LengthSq = Dot2D(Segment, Segment);
+		const double LengthSq = ReplanDot2D(Segment, Segment);
 		if (LengthSq < UE_KINDA_SMALL_NUMBER)
 		{
 			return static_cast<float>(FVector::Dist2D(Point, A));
 		}
-		const double T = FMath::Clamp(Dot2D(Point - A, Segment) / LengthSq, 0.0, 1.0);
+		const double T = FMath::Clamp(ReplanDot2D(Point - A, Segment) / LengthSq, 0.0, 1.0);
 		return static_cast<float>(FVector::Dist2D(Point, A + Segment * T));
 	}
 }
@@ -36,13 +36,13 @@ float FReplanPolicy::CrossTrackDistance(const FNavalPath& Path, int32 ActiveWayp
 	const FVector& P1 = Path.Waypoints[A];
 
 	const FVector Segment = P1 - P0;
-	const double LengthSq = Dot2D(Segment, Segment);
+	const double LengthSq = ReplanDot2D(Segment, Segment);
 	if (LengthSq < UE_KINDA_SMALL_NUMBER)
 	{
 		return static_cast<float>(FVector::Dist2D(ShipLocation, P1));
 	}
 
-	const double T = FMath::Clamp(Dot2D(ShipLocation - P0, Segment) / LengthSq, 0.0, 1.0);
+	const double T = FMath::Clamp(ReplanDot2D(ShipLocation - P0, Segment) / LengthSq, 0.0, 1.0);
 	const FVector Projection = P0 + Segment * T;
 	return static_cast<float>(FVector::Dist2D(ShipLocation, Projection));
 }
