@@ -27,8 +27,22 @@ namespace
 		case ENavigatorState::Idle:      return TEXT("Idle");
 		case ENavigatorState::Planning:  return TEXT("Planning");
 		case ENavigatorState::Following: return TEXT("Following");
+		case ENavigatorState::Escaping:  return TEXT("Escaping");
 		case ENavigatorState::Arrived:   return TEXT("Arrived");
 		default:                         return TEXT("?");
+		}
+	}
+
+	const TCHAR* ReasonName(EReplanReason Reason)
+	{
+		switch (Reason)
+		{
+		case EReplanReason::OffRoute:      return TEXT("off-route");
+		case EReplanReason::PathBlocked:   return TEXT("path blocked");
+		case EReplanReason::ThreatChanged: return TEXT("threat changed");
+		case EReplanReason::PowerChanged:  return TEXT("power changed");
+		case EReplanReason::Periodic:      return TEXT("periodic");
+		default:                           return TEXT("none");
 		}
 	}
 }
@@ -42,7 +56,29 @@ UNavalNavigatorComponent::UNavalNavigatorComponent()
 void UNavalNavigatorComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	CacheShipAndSubscribe();
+}
 
+void UNavalNavigatorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ThreatChangedHandle.IsValid())
+	{
+		if (USeaGridSubsystem* SeaGrid = GetSeaGrid())
+		{
+			SeaGrid->OnThreatChanged.Remove(ThreatChangedHandle);
+		}
+		ThreatChangedHandle.Reset();
+	}
+	if (Ship && Ship->GetPowerComponent())
+	{
+		Ship->GetPowerComponent()->OnPowerChanged.RemoveDynamic(this, &UNavalNavigatorComponent::HandlePowerChanged);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void UNavalNavigatorComponent::CacheShipAndSubscribe()
+{
 	Ship = Cast<ASailingShipPawn>(GetOwner());
 	if (!Ship)
 	{
@@ -51,6 +87,29 @@ void UNavalNavigatorComponent::BeginPlay()
 	}
 
 	LastHeadingDeg = Ship->GetHeadingDegrees();
+	ReplanPolicy.Params = ReplanParams;
+
+	// Replans are event-driven wherever possible: subscribe to zone changes and to this ship's own
+	// power changes, so the policy only has to poll the cheap geometric triggers per tick.
+	if (USeaGridSubsystem* SeaGrid = GetSeaGrid())
+	{
+		ThreatChangedHandle = SeaGrid->OnThreatChanged.AddUObject(this, &UNavalNavigatorComponent::HandleThreatChanged);
+	}
+	if (Ship->GetPowerComponent())
+	{
+		Ship->GetPowerComponent()->OnPowerChanged.AddDynamic(this, &UNavalNavigatorComponent::HandlePowerChanged);
+	}
+}
+
+USeaGridSubsystem* UNavalNavigatorComponent::GetSeaGrid() const
+{
+	UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<USeaGridSubsystem>() : nullptr;
+}
+
+float UNavalNavigatorComponent::GetShipPower() const
+{
+	return (Ship && Ship->GetPowerComponent()) ? Ship->GetPowerComponent()->GetPowerLevel() : 1.0f;
 }
 
 void UNavalNavigatorComponent::RequestMoveTo(const FVector& Goal)
@@ -60,45 +119,23 @@ void UNavalNavigatorComponent::RequestMoveTo(const FVector& Goal)
 		return;
 	}
 
-	State = ENavigatorState::Planning;
+	CurrentGoal = Goal;
+	bHasGoal = true;
+	bHasOriginalGoal = false;
 
-	const FVector Start = Ship->GetActorLocation();
-
-	UWorld* World = GetWorld();
-	USeaGridSubsystem* SeaGrid = World ? World->GetSubsystem<USeaGridSubsystem>() : nullptr;
-	if (SeaGrid && SeaGrid->GetGrid().IsBuilt())
-	{
-		// Plan for THIS ship's power: a strong ship sails through zones a weak one routes around.
-		// Setting the observer power invalidates the stamped layer, so mark it dirty before the plan.
-		const float ShipPower = Ship->GetPowerComponent() ? Ship->GetPowerComponent()->GetPowerLevel() : 1.0f;
-		SeaGrid->ObserverPowerLevel = ShipPower;
-		SeaGrid->HostilityThreshold = HostilityThreshold;
-		SeaGrid->MarkThreatDirty();
-
-		CurrentPath = SeaGrid->FindPath(Start, Goal, PathQuery);
-
-		if (!CurrentPath.bSuccess)
-		{
-			// Blocked or off-grid. Fall back to a straight line so the ship still visibly tries —
-			// enclosure/escape handling is Slice 4's job, not the follower's.
-			UE_LOG(LogNavalNav, Warning, TEXT("%s could not plan to %s; steering straight."), *GetName(), *Goal.ToString());
-			BuildStraightPath(Start, Goal);
-		}
-	}
-	else
-	{
-		// No grid in this world (a bare test level): just steer straight at the goal.
-		BuildStraightPath(Start, Goal);
-	}
-
+	SetState(ENavigatorState::Planning);
+	CurrentPath = PlanPath(Ship->GetActorLocation(), Goal);
 	Helmsman.Reset();
-	State = ENavigatorState::Following;
+	ReplanPolicy.NotePlanned();
+	SetState(ENavigatorState::Following);
 }
 
 void UNavalNavigatorComponent::Stop()
 {
-	State = ENavigatorState::Idle;
+	SetState(ENavigatorState::Idle);
 	CurrentPath.Reset();
+	bHasGoal = false;
+	bHasOriginalGoal = false;
 
 	if (Ship)
 	{
@@ -107,14 +144,97 @@ void UNavalNavigatorComponent::Stop()
 	}
 }
 
-void UNavalNavigatorComponent::BuildStraightPath(const FVector& Start, const FVector& Goal)
+FNavalPath UNavalNavigatorComponent::PlanPath(const FVector& Start, const FVector& Goal)
 {
-	CurrentPath.Reset();
-	CurrentPath.Waypoints.Add(Start);
-	CurrentPath.Waypoints.Add(Goal);
-	CurrentPath.Costs.Add(0.0f);
-	CurrentPath.Costs.Add(static_cast<float>(FVector::Dist2D(Start, Goal)));
-	CurrentPath.bSuccess = true;
+	FNavalPath Path;
+
+	USeaGridSubsystem* SeaGrid = GetSeaGrid();
+	if (SeaGrid && SeaGrid->GetGrid().IsBuilt())
+	{
+		// Plan for THIS ship's power: a strong ship sails through zones a weak one routes around.
+		// Setting the observer power invalidates the stamped layer, so mark it dirty before the plan.
+		SeaGrid->ObserverPowerLevel = GetShipPower();
+		SeaGrid->HostilityThreshold = HostilityThreshold;
+		SeaGrid->MarkThreatDirty();
+
+		Path = SeaGrid->FindPath(Start, Goal, PathQuery);
+		if (!Path.bSuccess)
+		{
+			// Blocked or off-grid: steer straight so the ship still visibly tries.
+			BuildStraightPath(Start, Goal, Path);
+		}
+	}
+	else
+	{
+		BuildStraightPath(Start, Goal, Path);
+	}
+
+	return Path;
+}
+
+void UNavalNavigatorComponent::BuildStraightPath(const FVector& Start, const FVector& Goal, FNavalPath& OutPath)
+{
+	OutPath.Reset();
+	OutPath.Waypoints.Add(Start);
+	OutPath.Waypoints.Add(Goal);
+	OutPath.Costs.Add(0.0f);
+	OutPath.Costs.Add(static_cast<float>(FVector::Dist2D(Start, Goal)));
+	OutPath.bSuccess = true;
+}
+
+void UNavalNavigatorComponent::ConsiderReplan(EReplanReason Reason)
+{
+	if (!bHasGoal)
+	{
+		return;
+	}
+
+	const FVector Start = Ship->GetActorLocation();
+	const FNavalPath Candidate = PlanPath(Start, CurrentGoal);
+
+	// Off-route and blocked mean the old path can no longer be trusted, so any valid replacement is
+	// an improvement; otherwise only switch for a meaningfully cheaper route, to avoid dithering.
+	const bool bOldInvalid = (Reason == EReplanReason::PathBlocked || Reason == EReplanReason::OffRoute || !CurrentPath.bSuccess);
+	if (ReplanPolicy.ShouldAdoptNewPath(CurrentPath.GetTotalCost(), Candidate.GetTotalCost(), bOldInvalid))
+	{
+		// The candidate starts at the ship's current position, so the helmsman's fresh waypoint 1 is
+		// already ahead of the bow: the splice keeps heading continuity, no reset-to-start jerk.
+		CurrentPath = Candidate;
+		Helmsman.Reset();
+	}
+}
+
+void UNavalNavigatorComponent::EnterEscape()
+{
+	USeaGridSubsystem* SeaGrid = GetSeaGrid();
+	if (!SeaGrid)
+	{
+		return; // no grid to search; nothing to do but keep sailing
+	}
+
+	OriginalGoal = bHasGoal ? CurrentGoal : Ship->GetActorLocation();
+	bHasOriginalGoal = bHasGoal;
+
+	FVector Target;
+	if (SeaGrid->FindEscapeTarget(Ship->GetActorLocation(), GetShipPower(), HostilityThreshold, EscapeSearchRadius, Target))
+	{
+		EscapeTarget = Target;
+		CurrentPath = PlanPath(Ship->GetActorLocation(), Target);
+		Helmsman.Reset();
+		ReplanPolicy.NotePlanned();
+		SetState(ENavigatorState::Escaping);
+		UE_LOG(LogNavalNav, Verbose, TEXT("%s escaping to %s"), *GetOwner()->GetName(), *Target.ToString());
+	}
+}
+
+void UNavalNavigatorComponent::SetState(ENavigatorState NewState)
+{
+	if (State == NewState)
+	{
+		return;
+	}
+	State = NewState;
+	OnStateChanged.Broadcast(this, NewState);
 }
 
 FHelmsmanInput UNavalNavigatorComponent::GatherInput(float DeltaTime)
@@ -154,20 +274,79 @@ void UNavalNavigatorComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 		return;
 	}
 
-	if (State == ENavigatorState::Following)
+	// Let the policy be re-tuned live from the details panel.
+	ReplanPolicy.Params = ReplanParams;
+
+	if (State == ENavigatorState::Following || State == ENavigatorState::Escaping)
 	{
 		const FHelmsmanInput Input = GatherInput(DeltaTime);
 		LastOutput = Helmsman.Update(CurrentPath, Input, Ship->GetEffectiveParams(), DeltaTime);
-
 		Ship->SetRudderInput(LastOutput.RudderInput);
 		Ship->SetSailTrim(LastOutput.SailTrim);
 
-		if (LastOutput.bArrived)
+		USeaGridSubsystem* SeaGrid = GetSeaGrid();
+		const float ShipPower = GetShipPower();
+		const FVector ShipLoc = Ship->GetActorLocation();
+		const float SelfCost = SeaGrid ? SeaGrid->GetObserverCellCost(ShipLoc, ShipPower, HostilityThreshold) : NavalNav::OpenWaterCost;
+
+		if (State == ENavigatorState::Following)
 		{
-			State = ENavigatorState::Arrived;
-			Ship->SetRudderInput(0.0f);
-			Ship->SetSailTrim(0.0f);
-			OnArrived.Broadcast(this);
+			if (LastOutput.bArrived)
+			{
+				SetState(ENavigatorState::Arrived);
+				Ship->SetRudderInput(0.0f);
+				Ship->SetSailTrim(0.0f);
+				OnArrived.Broadcast(this);
+			}
+			else if (SeaGrid && SelfCost >= EscapeCostThreshold)
+			{
+				// The ship is in hostile water — a zone moved onto it, or its power dropped. Break off.
+				EnterEscape();
+			}
+			else
+			{
+				FReplanSituation Situation;
+				Situation.DeltaSeconds = DeltaTime;
+				Situation.bFollowing = true;
+				Situation.ShipLocation = ShipLoc;
+				Situation.Path = &CurrentPath;
+				Situation.ActiveWaypoint = LastOutput.ActiveWaypoint;
+
+				const float Threshold = HostilityThreshold;
+				auto CostSampler = [SeaGrid, ShipPower, Threshold](const FVector& Point)
+				{
+					return SeaGrid ? SeaGrid->GetObserverCellCost(Point, ShipPower, Threshold) : NavalNav::OpenWaterCost;
+				};
+
+				const FReplanDecision Decision = ReplanPolicy.Evaluate(Situation, CostSampler);
+				if (Decision.bShouldReplan)
+				{
+					ConsiderReplan(Decision.Reason);
+				}
+			}
+		}
+		else // Escaping
+		{
+			// Resume the goal the moment the ship is back in open water, or once it reaches the exit.
+			const bool bClear = SelfCost <= NavalNav::OpenWaterCost + 0.5f;
+			if (LastOutput.bArrived || bClear)
+			{
+				if (bHasOriginalGoal)
+				{
+					SetState(ENavigatorState::Planning);
+					CurrentGoal = OriginalGoal;
+					bHasGoal = true;
+					bHasOriginalGoal = false;
+					CurrentPath = PlanPath(ShipLoc, CurrentGoal);
+					Helmsman.Reset();
+					ReplanPolicy.NotePlanned();
+					SetState(ENavigatorState::Following);
+				}
+				else
+				{
+					Stop();
+				}
+			}
 		}
 	}
 
@@ -176,6 +355,25 @@ void UNavalNavigatorComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	if (CVarNavDebug.GetValueOnGameThread() != 0)
 	{
 		DrawNavDebug();
+	}
+}
+
+void UNavalNavigatorComponent::HandlePowerChanged(float OldPower, float NewPower)
+{
+	ReplanPolicy.NotifyPowerChanged();
+}
+
+void UNavalNavigatorComponent::HandleThreatChanged(const FVector& Location, float Radius)
+{
+	if (State != ENavigatorState::Following || !Ship)
+	{
+		return;
+	}
+
+	if (FReplanPolicy::IsChangeRelevant(Location, Radius, Ship->GetActorLocation(), CurrentPath,
+		LastOutput.ActiveWaypoint, ReplanParams.RelevanceRadius))
+	{
+		ReplanPolicy.NotifyThreatChanged();
 	}
 }
 
@@ -193,17 +391,18 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 	// The route: a line through every waypoint, with a small sphere at each.
 	if (CurrentPath.bSuccess)
 	{
+		const FColor RouteColor = (State == ENavigatorState::Escaping) ? FColor(255, 90, 90) : FColor(70, 130, 180);
 		for (int32 Index = 0; Index < CurrentPath.Num(); ++Index)
 		{
 			const FVector Point = CurrentPath.Waypoints[Index] + Lift;
 			if (Index > 0)
 			{
-				DrawDebugLine(World, CurrentPath.Waypoints[Index - 1] + Lift, Point, FColor(70, 130, 180),
+				DrawDebugLine(World, CurrentPath.Waypoints[Index - 1] + Lift, Point, RouteColor,
 					/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/6.0f);
 			}
 			const bool bActive = (Index == LastOutput.ActiveWaypoint);
 			DrawDebugSphere(World, Point, bActive ? 300.0f : 150.0f, 12,
-				bActive ? FColor(255, 220, 80) : FColor(70, 130, 180), false, -1.0f);
+				bActive ? FColor(255, 220, 80) : RouteColor, false, -1.0f);
 		}
 	}
 
@@ -215,8 +414,9 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 	DrawDebugSphere(World, LastOutput.TurnInPoint + Lift, 180.0f, 12, FColor(255, 140, 40), false, -1.0f);
 
 	const FString Readout = FString::Printf(
-		TEXT("Navigator: %s\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
-		StateName(State), LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
+		TEXT("Navigator: %s  | replans %d (%s)\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
+		StateName(State), ReplanPolicy.GetReplanCount(), ReasonName(ReplanPolicy.GetLastReason()),
+		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
 		LastOutput.BearingErrorDeg, LastOutput.RudderInput, LastOutput.SailTrim,
 		LastOutput.bTacking ? TEXT(" | TACKING") : TEXT(""));
 	DrawDebugString(World, Ship->GetActorLocation() + FVector(0.0, 0.0, 650.0), Readout,
