@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Ship/SailingShipConfig.h"
 #include "Ship/ShipPowerComponent.h"
 #include "Ship/WindSubsystem.h"
@@ -52,8 +53,9 @@ ASailingShipPawn::ASailingShipPawn()
 	// stays behind the stern as she turns, without any per-frame camera code.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(ShipRoot);
-	CameraBoom->TargetArmLength = 4000.0f;
-	CameraBoom->SetRelativeRotation(FRotator(-25.0f, 0.0f, 0.0f));
+	// A high, tilted-down chase so several ships and the zones around them read in one frame.
+	CameraBoom->TargetArmLength = 6500.0f;
+	CameraBoom->SetRelativeRotation(FRotator(-55.0f, 0.0f, 0.0f));
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritRoll = false;
 	CameraBoom->bInheritYaw = true;
@@ -95,6 +97,26 @@ void ASailingShipPawn::Tick(float DeltaSeconds)
 	if (CVarShipDebug.GetValueOnGameThread() != 0)
 	{
 		DrawShipDebug();
+	}
+}
+
+void ASailingShipPawn::SetHullColor(FLinearColor Color)
+{
+	if (HullMesh && HullMesh->GetStaticMesh())
+	{
+		// The engine basic shapes use BasicShapeMaterial, which exposes a "Color" vector param.
+		if (UMaterialInstanceDynamic* Dynamic = HullMesh->CreateDynamicMaterialInstance(0))
+		{
+			Dynamic->SetVectorParameterValue(TEXT("Color"), Color);
+		}
+	}
+}
+
+void ASailingShipPawn::AddCameraZoom(float Delta)
+{
+	if (CameraBoom)
+	{
+		CameraBoom->TargetArmLength = FMath::Clamp(CameraBoom->TargetArmLength + Delta, 2500.0f, 20000.0f);
 	}
 }
 

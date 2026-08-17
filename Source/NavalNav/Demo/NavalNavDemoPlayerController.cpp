@@ -23,18 +23,19 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 		return;
 	}
 
-	auto MakeAction = [this](const TCHAR* Name)
+	auto MakeAction = [this](const TCHAR* Name, EInputActionValueType Type)
 	{
 		UInputAction* Action = NewObject<UInputAction>(this, Name);
-		Action->ValueType = EInputActionValueType::Boolean;
+		Action->ValueType = Type;
 		return Action;
 	};
 
-	ClickAction = MakeAction(TEXT("DemoClickAction"));
-	CycleAction = MakeAction(TEXT("DemoCycleAction"));
-	NavDebugAction = MakeAction(TEXT("DemoNavDebugAction"));
-	ShipDebugAction = MakeAction(TEXT("DemoShipDebugAction"));
-	GridDebugAction = MakeAction(TEXT("DemoGridDebugAction"));
+	ClickAction = MakeAction(TEXT("DemoClickAction"), EInputActionValueType::Boolean);
+	CycleAction = MakeAction(TEXT("DemoCycleAction"), EInputActionValueType::Boolean);
+	NavDebugAction = MakeAction(TEXT("DemoNavDebugAction"), EInputActionValueType::Boolean);
+	ShipDebugAction = MakeAction(TEXT("DemoShipDebugAction"), EInputActionValueType::Boolean);
+	GridDebugAction = MakeAction(TEXT("DemoGridDebugAction"), EInputActionValueType::Boolean);
+	ZoomAction = MakeAction(TEXT("DemoZoomAction"), EInputActionValueType::Axis1D);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("DemoMappingContext"));
 	MappingContext->MapKey(ClickAction, EKeys::LeftMouseButton);
@@ -42,6 +43,7 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	MappingContext->MapKey(NavDebugAction, EKeys::One);
 	MappingContext->MapKey(ShipDebugAction, EKeys::Two);
 	MappingContext->MapKey(GridDebugAction, EKeys::Three);
+	MappingContext->MapKey(ZoomAction, EKeys::MouseWheelAxis);
 }
 
 void ANavalNavDemoPlayerController::BeginPlay()
@@ -76,6 +78,7 @@ void ANavalNavDemoPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(NavDebugAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnToggleNavDebug);
 		EnhancedInput->BindAction(ShipDebugAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnToggleShipDebug);
 		EnhancedInput->BindAction(GridDebugAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnToggleGridDebug);
+		EnhancedInput->BindAction(ZoomAction, ETriggerEvent::Triggered, this, &ANavalNavDemoPlayerController::OnZoom);
 	}
 }
 
@@ -140,24 +143,34 @@ void ANavalNavDemoPlayerController::OnCycleShip(const FInputActionValue& Value)
 
 void ANavalNavDemoPlayerController::OnToggleNavDebug(const FInputActionValue& Value)
 {
-	ToggleCVar(TEXT("naval.Nav.Debug"));
+	ToggleCVar(TEXT("naval.Nav.Debug"), TEXT("Navigator overlay"));
 }
 
 void ANavalNavDemoPlayerController::OnToggleShipDebug(const FInputActionValue& Value)
 {
-	ToggleCVar(TEXT("naval.Ship.Debug"));
+	ToggleCVar(TEXT("naval.Ship.Debug"), TEXT("Ship overlay"));
 }
 
 void ANavalNavDemoPlayerController::OnToggleGridDebug(const FInputActionValue& Value)
 {
-	ToggleCVar(TEXT("naval.DrawGrid"));
-	ToggleCVar(TEXT("naval.DrawPath"));
+	ToggleCVar(TEXT("naval.DrawGrid"), TEXT("Grid overlay"));
 }
 
-void ANavalNavDemoPlayerController::ToggleCVar(const TCHAR* Name)
+void ANavalNavDemoPlayerController::OnZoom(const FInputActionValue& Value)
+{
+	if (ASailingShipPawn* Ship = Cast<ASailingShipPawn>(GetPawn()))
+	{
+		// Wheel up (positive) pulls the camera in; wheel down pushes it out.
+		Ship->AddCameraZoom(-Value.Get<float>() * 800.0f);
+	}
+}
+
+void ANavalNavDemoPlayerController::ToggleCVar(const TCHAR* Name, const TCHAR* Label)
 {
 	if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(Name))
 	{
-		CVar->Set(CVar->GetInt() != 0 ? 0 : 1);
+		const int32 NewValue = CVar->GetInt() != 0 ? 0 : 1;
+		CVar->Set(NewValue);
+		UE_LOG(LogNavalNav, Log, TEXT("%s: %s"), Label, NewValue ? TEXT("ON") : TEXT("OFF"));
 	}
 }

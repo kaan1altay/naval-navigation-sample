@@ -47,12 +47,13 @@ private:
 	void OnToggleNavDebug(const FInputActionValue& Value);
 	void OnToggleShipDebug(const FInputActionValue& Value);
 	void OnToggleGridDebug(const FInputActionValue& Value);
+	void OnZoom(const FInputActionValue& Value);
 
 	/** Rebuilds the ship list and possesses the ship at Index (for its chase cam). */
 	void PossessShipAtIndex(int32 Index);
 
-	/** Flips a 0/1 console variable. */
-	static void ToggleCVar(const TCHAR* Name);
+	/** Flips a 0/1 console variable and logs the new state. */
+	static void ToggleCVar(const TCHAR* Name, const TCHAR* Label);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ClickAction;
@@ -68,6 +69,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> GridDebugAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ZoomAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> MappingContext;

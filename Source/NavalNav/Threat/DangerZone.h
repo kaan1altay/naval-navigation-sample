@@ -8,6 +8,9 @@
 #include "DangerZone.generated.h"
 
 class USphereComponent;
+class UStaticMeshComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 struct FSeaGridData;
 
 /**
@@ -101,9 +104,24 @@ private:
 	/** Notifies the sea grid that this footprint changed, if it moved far enough to matter. */
 	void NotifyGridIfMoved();
 
+	/** Rescales and recolours the flat disc so a zone reads in-game without any debug overlay. */
+	void UpdateZoneVisual();
+
 	/** Sphere used purely as an editor visualiser; it never collides. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Naval|Threat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> ZoneSphere;
+
+	/** Flat translucent-looking disc drawn on the sea so the zone is visible in a plain build. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Naval|Threat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> ZoneDisc;
+
+	/** Base material the disc's dynamic instance is made from (an engine primitive material). */
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> DiscBaseMaterial;
+
+	/** Dynamic instance whose colour tracks the zone's power. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DiscMaterial;
 
 	/** Placed location, i.e. the centre the demo movement oscillates around. */
 	FVector HomeLocation = FVector::ZeroVector;

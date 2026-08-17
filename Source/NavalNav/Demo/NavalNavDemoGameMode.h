@@ -31,6 +31,7 @@ public:
 
 	//~ Begin AGameModeBase interface
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	//~ End AGameModeBase interface
 
 	/** Sea grid to build on BeginPlay. The default covers the standard 40 km field. */
@@ -65,11 +66,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
 	bool bAutoWander = true;
 
+	/** Colour of the sea plane. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
+	FLinearColor SeaColor = FLinearColor(0.02f, 0.09f, 0.22f);
+
 private:
 	/** Re-orders a ship to a fresh random destination when it arrives, so the demo never stops. */
 	UFUNCTION()
 	void OnShipArrived(UNavalNavigatorComponent* Navigator);
 
+	/** Spawns a sun, sky and a big sea plane so an empty level is actually visible. */
+	void SpawnEnvironment();
+
+	/** Colours a ship (flagship gold, escorts a cool grey-blue) and returns its power. */
+	float SetupShipAppearanceAndPower(class ASailingShipPawn* Ship, int32 Index) const;
+
 	/** A random point within FieldRadius of the grid centre, at sea level. */
 	FVector RandomSeaPoint() const;
+
+	/** Draws the sea-grid cost field around the view when naval.DrawGrid is on (no debug actor needed). */
+	void DrawGridOverlay() const;
 };

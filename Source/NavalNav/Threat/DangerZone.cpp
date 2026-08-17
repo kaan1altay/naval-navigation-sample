@@ -3,9 +3,14 @@
 #include "Threat/DangerZone.h"
 
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Grid/SeaGrid.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Threat/ThreatEvaluator.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -14,6 +19,12 @@ namespace
 
 	/** A zone has to drift this fraction of a cell before the threat layer is re-stamped. */
 	constexpr float RestampCellFraction = 0.5f;
+
+	/** Height (uu) the disc floats above the sea so it reads without z-fighting the water plane. */
+	constexpr float DiscHeight = 25.0f;
+
+	/** The engine cylinder is 100 uu across, so world radius R needs an XY scale of R / 50. */
+	constexpr float CylinderUnitRadius = 50.0f;
 }
 
 ADangerZone::ADangerZone()
@@ -29,6 +40,24 @@ ADangerZone::ADangerZone()
 	ZoneSphere->SetHiddenInGame(true);
 	ZoneSphere->ShapeColor = FColor(255, 80, 60);
 	SetRootComponent(ZoneSphere);
+
+	// A flat disc on the sea so the zone is visible in a plain build with no debug overlay.
+	ZoneDisc = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ZoneDisc"));
+	ZoneDisc->SetupAttachment(ZoneSphere);
+	ZoneDisc->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ZoneDisc->SetGenerateOverlapEvents(false);
+	ZoneDisc->SetCastShadow(false);
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMesh.Succeeded())
+	{
+		ZoneDisc->SetStaticMesh(CylinderMesh.Object);
+	}
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DiscMat(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (DiscMat.Succeeded())
+	{
+		DiscBaseMaterial = DiscMat.Object;
+	}
 }
 
 void ADangerZone::OnConstruction(const FTransform& Transform)
@@ -38,6 +67,35 @@ void ADangerZone::OnConstruction(const FTransform& Transform)
 	if (ZoneSphere)
 	{
 		ZoneSphere->SetSphereRadius(Radius, /*bUpdateOverlaps=*/false);
+	}
+
+	UpdateZoneVisual();
+}
+
+void ADangerZone::UpdateZoneVisual()
+{
+	if (!ZoneDisc)
+	{
+		return;
+	}
+
+	// Make (or reuse) the dynamic material so the colour can track power.
+	if (!DiscMaterial && DiscBaseMaterial)
+	{
+		DiscMaterial = UMaterialInstanceDynamic::Create(DiscBaseMaterial, this);
+		ZoneDisc->SetMaterial(0, DiscMaterial);
+	}
+
+	const float ScaleXY = FMath::Max(Radius, 1.0f) / CylinderUnitRadius;
+	ZoneDisc->SetRelativeScale3D(FVector(ScaleXY, ScaleXY, 0.2));
+	ZoneDisc->SetRelativeLocation(FVector(0.0, 0.0, DiscHeight));
+
+	if (DiscMaterial)
+	{
+		// Amber for a light threat deepening to blood-red as power rises.
+		const float Strength = FMath::Clamp(PowerLevel / 6.0f, 0.0f, 1.0f);
+		const FLinearColor Color = FMath::Lerp(FLinearColor(1.0f, 0.55f, 0.10f), FLinearColor(1.0f, 0.05f, 0.02f), Strength);
+		DiscMaterial->SetVectorParameterValue(TEXT("Color"), Color);
 	}
 }
 
@@ -55,6 +113,8 @@ void ADangerZone::BeginPlay()
 
 	// Only moving zones need a tick; a static battery costs nothing per frame.
 	SetActorTickEnabled(bMoves);
+
+	UpdateZoneVisual();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -148,6 +208,7 @@ void ADangerZone::SetRadius(float NewRadius)
 	{
 		ZoneSphere->SetSphereRadius(Radius, /*bUpdateOverlaps=*/false);
 	}
+	UpdateZoneVisual();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -161,6 +222,7 @@ void ADangerZone::SetRadius(float NewRadius)
 void ADangerZone::SetPowerLevel(float NewPowerLevel)
 {
 	PowerLevel = FMath::Max(0.0f, NewPowerLevel);
+	UpdateZoneVisual();
 
 	if (UWorld* World = GetWorld())
 	{

@@ -81,6 +81,14 @@ public:
 
 	UShipPowerComponent* GetPowerComponent() const { return PowerComponent; }
 
+	/** Tints the hull by creating a dynamic material instance on the mesh. Used to colour the demo fleet. */
+	UFUNCTION(BlueprintCallable, Category = "Sailing")
+	void SetHullColor(FLinearColor Color);
+
+	/** Nudges the chase-cam boom length, clamped to a sensible range. Used by the demo's mouse-wheel zoom. */
+	UFUNCTION(BlueprintCallable, Category = "Sailing")
+	void AddCameraZoom(float Delta);
+
 	/** Inline sailing tunables, used unless SailingConfig points at a data asset. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing")
 	FSailingModelParams SailingParams;
