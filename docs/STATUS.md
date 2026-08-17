@@ -1,9 +1,9 @@
 # Project status
 
-_Last updated: 2026-08-16 — end of Slice 2._
+_Last updated: 2026-08-17 — end of Slice 3._
 
-> **Now building on Windows.** Slices 1 and 2 compile with UE 5.5 + Visual Studio 2022
-> (MSVC 14.44) via Unreal Build Tool, and all **13 automation tests pass in-engine**
+> **Now building on Windows.** Slices 1–3 compile with UE 5.5 + Visual Studio 2022
+> (MSVC 14.44) via Unreal Build Tool, and all **18 automation tests pass in-engine**
 > (`Automation RunTests NavalNav`, headless, `-nullrhi`). The Linux notes below are the
 > history of how Slice 1 was first authored; they no longer describe the only place the code
 > has run.
@@ -141,10 +141,77 @@ the eye of the wind loses speed only through the no-go zero, not through an expl
 None of these are needed for a readable, predictable ship the navigation follower can drive; the
 model is intentionally the *simplest* thing that still forces tacking and reproduces turn radius.
 
+## What is implemented — Slice 3: predictive helmsman + navigator
+
+```
+Source/NavalNav/
+  Navigation/PredictiveHelmsman.{h,cpp}    FPredictiveHelmsman, FHelmsmanParams, FHelmsmanOutput
+  Navigation/NavalNavigatorComponent.{h,cpp}  UNavalNavigatorComponent (state machine, OnArrived)
+  Demo/NavalNavDemoGameMode.{h,cpp}        Spawns fleet + zones + wind from an empty map
+  Demo/NavalNavDemoPlayerController.{h,cpp}  Click-to-move, Tab cycle, 1/2/3 debug toggles
+  Tests/PredictiveHelmsmanTest.cpp         5 automation tests
+```
+
+**The design principle, kept honest.** The planner is physics-agnostic and the helmsman owns the
+physics. A\* returns an `FNavalPath` that knows nothing about wind, turning circles or momentum;
+the helmsman is what reconciles that geometric *intent* with a hull that cannot point upwind and
+cannot corner on a dime. The path is a suggestion, not a rail.
+
+**Predictive helmsman.** `FPredictiveHelmsman` is a plain, engine-free struct (same discipline as
+the sailing model and the pathfinder). Each tick it:
+
+- steers at a **look-ahead point** walked along the path, at a distance that scales with speed, so
+  a fast ship anticipates further — this is pure-pursuit tracking, not corner-chasing;
+- starts each turn **before** the corner. It reads the heading change at the next waypoint and,
+  from `FSailingModel::PredictTurnRadius`, computes a **turn-in distance** `R·tan(θ/2)`; once the
+  ship is within it, the desired heading is blended toward the next leg so the ship carves the
+  corner instead of overshooting. Turn-in grows with speed and with corner sharpness;
+- commands rudder as a **PD** on bearing error (with a deadband) damped by the measured yaw rate,
+  and eases sheets for arrival (`SlowdownRadius` → `ArrivalRadius`) and in hard turns;
+- **advances the active waypoint** as soon as it is within `WaypointAcceptRadius` *or* has fallen
+  behind the ship, so a ship that misses a waypoint never circles back for it;
+- **tacks** when the course it wants is inside the no-go cone: it holds the nearer close-hauled
+  edge (with hysteresis) until the bearing clears the cone. Deliberately simple — see the
+  simplification note below.
+
+Outputs are the rudder and trim orders plus telemetry (look-ahead point, turn-in point, bearing
+error, tacking flag) for the debug draw and the tests.
+
+**Navigator.** `UNavalNavigatorComponent` sits on the ship and ties the two halves together.
+`RequestMoveTo(Goal)` plans through `USeaGridSubsystem` **with this ship's own power** (so the
+relative-threat model applies per ship — a flagship sails through what a weak escort routes
+around), then a per-tick helmsman drives the `ASailingShipPawn`. State machine
+`Idle → Planning → Following → Arrived`, an `OnArrived` delegate (Slice 4's replanning will hang
+off it), and a `naval.Nav.Debug` overlay. With no sea grid in the world it falls back to a
+straight line, so it still works in a bare test level.
+
+**Demo.** `ANavalNavDemoGameMode` builds the whole thing from an empty level — grid, wind, a
+scatter of danger zones and a small fleet of navigator-driven ships, one given high power to show
+relative threat — and, left to wander, keeps handing them fresh goals. It is set as the project's
+`GlobalDefaultGameMode`, so **New Empty Level → Play** is the entire demo, no `.umap` to author.
+`ANavalNavDemoPlayerController` drives it with the cursor: left-click on the water orders the
+selected ship there, `Tab` cycles which ship you command and watch, `1`/`2`/`3` toggle the
+navigator / ship / grid overlays. Ships now also carry a **visible default hull** (a scaled engine
+cone), so they show up with no imported assets.
+
+**What is tunable** (`FHelmsmanParams`, on the navigator or a test): `LookAheadBase`,
+`LookAheadPerSpeed`, `LookAheadMin`/`Max`; `SteerP`, `SteerD`, `BearingDeadbandDeg`;
+`TurnInLeadScale`; `WaypointAcceptRadius`, `ArrivalRadius`, `SlowdownRadius`;
+`bEaseTrimInTurns`/`TurnTrimEaseDeg`/`MinTurnTrim`; `TackMarginDeg`, `TackHysteresisDeg`.
+
+**Known simplification (deliberate).** The tacker is a single-decision affair: when the wanted
+course is upwind it holds one close-hauled edge and bears away once the bearing clears the no-go.
+It does **not** beat to windward with laylines and alternating boards, so a goal placed *directly*
+upwind is sailed as one long tack plus a bear-away rather than a proper zig-zag. That is enough to
+make the wind matter and keep the helmsman readable; full VMG beating is out of scope for the
+sample. Everything else (look-ahead, turn-in, waypoint advance, arrival) is exercised by the
+closed-loop test that sails a zigzag to its goal over 10k ticks.
+
 ## Did it compile?
 
-Slice 2 **compiles and its tests pass** on Windows (UE 5.5, VS 2022 / MSVC 14.44); the table below
-is the Slice 1 verification, done before an engine was available. What *was* verified then:
+Slices 2 and 3 **compile and their tests pass** on Windows (UE 5.5, VS 2022 / MSVC 14.44); the
+table below is the Slice 1 verification, done before an engine was available. What *was* verified
+then:
 
 | Check | Result |
 | --- | --- |
@@ -179,10 +246,11 @@ Covered scenarios (identical in the automation tests and the standalone harness)
 The standalone harness additionally runs a **reference Dijkstra** over the same cost model and
 asserts A\* returns exactly the optimal cost on 12 randomised cost fields with threat blobs.
 
-Slice 2 added the five sailing scenarios to that same harness (`Ship/SailingModel.cpp` is now in
-its compile list). They were **not** re-run standalone on the Windows box — it has no POSIX C++
-compiler — but the identical cases pass as UE automation tests, so the standalone count above is
-the Slice 1 figure, not the current one.
+Slices 2 and 3 added the five sailing and five helmsman scenarios to that same harness
+(`Ship/SailingModel.cpp` and `Navigation/PredictiveHelmsman.cpp` are now in its compile list, and
+the shim's `FMath` grew `Atan2`/`Cos`/`Tan`/degree conversions to feed them). They were **not**
+re-run standalone on the Windows box — it has no POSIX C++ compiler — but the identical cases pass
+as UE automation tests, so the standalone count above is the Slice 1 figure, not the current one.
 
 One real bug was caught by the tests while writing them: a zone configured with no lethal core
 made the single cell at its exact centre impassable (`0 <= 0`), quietly punching a hole through
@@ -190,17 +258,19 @@ an otherwise avoidable zone.
 
 ## What needs attention
 
-1. **No demo map yet.** `GameDefaultMap` points at an engine template map. The demo level with
-   placed `ADangerZone`s, an `ANavalNavDebugActor` and a sailing ship arrives with Slice 4; a
-   `.umap` is best authored in the editor.
-2. **The pawn has no mesh by default.** `HullMesh` is an empty `UStaticMeshComponent`, so a placed
-   ship is invisible until a level assigns one (or drops a child mesh). The debug overlay
-   (`naval.Ship.Debug 1`) shows it regardless.
-3. **`EngineAssociation` is `"5.5"`.** Change it if the target machine has a different version.
-4. **Eyeball the sailing feel in a viewport.** Drop an `ASailingShipPawn`, set `naval.Ship.Debug 1`,
-   and give it rudder/trim (possess it with `ASailingShipPlayerController`, or call the setters):
-   watch it stall head-to-wind, accelerate onto a reach, and turn only once it has way on. The
-   defaults are tuned for readability, not for any particular hull — expect to retune per ship.
+1. **Run the demo.** With the demo GameMode set as `GlobalDefaultGameMode`: open the editor, make
+   a **New Empty Level** (or use any level without its own GameMode override) and press **Play**.
+   The fleet, wind and danger zones spawn from code. Left-click the water to send the selected ship
+   there, `Tab` to cycle ships, `1`/`2`/`3` to toggle the navigator / ship / grid overlays. Headless
+   smoke test confirmed the GameMode spawns and plans without warnings, but the *feel* is best
+   judged in a viewport.
+2. **No `.umap` yet.** The demo is spawned from code rather than placed in a level. A hand-authored
+   map with terrain/water and pretty meshes is a Slice 4 nicety; it is not needed to see the system
+   work.
+3. **The tacker does not beat to windward.** A goal placed directly upwind is sailed as one tack
+   plus a bear-away, not a laylined zig-zag (see the Slice 3 simplification note). Fine for the
+   sample; worth knowing before pointing a ship straight into the wind and expecting a beat.
+4. **`EngineAssociation` is `"5.5"`.** Change it if the target machine has a different version.
 
 ## Roadmap
 
@@ -208,12 +278,14 @@ an otherwise avoidable zone.
   curve, a `UWindSubsystem` with direction/strength/drift, two-number helm-and-trim input. The
   interesting constraint is delivered: a sailing ship cannot make ground dead upwind and cannot
   turn without way on, which is what makes the follower in Slice 3 non-trivial.
-- **Slice 3 — predictive helmsman follower.** Consumes `FNavalPath` and drives the pawn:
-  look-ahead proportional to speed and turning radius, no-go-zone awareness against the wind,
-  tacking when the next leg is upwind. `FNavalPath::Costs` is already there for it to decide
-  where burning speed is worth it.
+- **Slice 3 — predictive helmsman follower. _Done._** Consumes `FNavalPath` and drives the pawn:
+  speed-scaled look-ahead, turn-in prediction from the sailing model's turning circle, no-go-zone
+  awareness with a simple tacker, and a navigator component wiring planner to helmsman. A code-only
+  demo spawns the whole thing from an empty map.
 - **Slice 4 — replanning triggers + demo map.** Replan on threat-layer change, on drifting off
   the plan, and on a wind shift that makes the current legs unsailable; hysteresis so a route
-  does not flip every frame. Plus the demo level tying the slices together.
+  does not flip every frame. An Escaping state on the navigator for when a ship is boxed in, and
+  a hand-authored demo level tying the slices together. `OnArrived` and the per-ship cost hook are
+  already in place for it.
 - **Later, if worth it:** cost-field flow fields for squadrons, hierarchical planning for
   larger seas, and moving the search off the game thread.

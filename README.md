@@ -7,11 +7,11 @@ pathfinder plans routes that trade distance against danger instead of only again
 ship that outguns a zone sails straight through it; a weaker one goes around.
 
 - **Engine:** Unreal Engine 5.5 · single `NavalNav` C++ runtime module · **License:** MIT
-- **Status:** Slice 2 (adds a sailing ship + wind) — see **[docs/STATUS.md](docs/STATUS.md)**
+- **Status:** Slice 3 (adds a predictive helmsman + a playable demo) — see **[docs/STATUS.md](docs/STATUS.md)**
 
 > Written from scratch as a portfolio piece. It builds with UE 5.5 + Visual Studio 2022 and all
-> 13 automation tests pass in-engine; the navigation and sailing cores are also verified by an
-> engine-free harness that runs with a plain compiler. `docs/STATUS.md` has the details.
+> 18 automation tests pass in-engine; the navigation, sailing and helmsman cores are also verified
+> by an engine-free harness that runs with a plain compiler. `docs/STATUS.md` has the details.
 
 ## The idea
 
@@ -32,6 +32,10 @@ Source/NavalNav/
   Ship/WindSubsystem.*       UWindSubsystem — one wind per world, drift and console overrides
   Ship/SailingShipPawn.*     ASailingShipPawn — kinematic hull wrapping the sailing model
   Ship/ShipPowerComponent.*  Combat power + FOnPowerChanged, for relative-threat replanning
+  Navigation/PredictiveHelmsman.*  Look-ahead + turn-in follower, engine-free and unit-tested
+  Navigation/NavalNavigatorComponent.*  Ties planner to helmsman; Idle/Planning/Following/Arrived
+  Demo/NavalNavDemoGameMode.*  Spawns the whole demo from an empty map (fleet, wind, zones)
+  Demo/NavalNavDemoPlayerController.*  Click-to-move, Tab to cycle ships, 1/2/3 debug toggles
   Debug/NavalNavDebugActor.* Drop-in-a-level harness with two draggable endpoints
   Tests/                     Automation tests
 Tools/AlgoSelfTest/          The same tests without an engine (development aid)
@@ -61,24 +65,44 @@ pinned to `MaxSpeed` on the best point of sail, and the rudder only bites once t
 rather than drive straight lines. The math lives in a plain `FSailingModel` struct so it is
 unit-tested without a world, the same way the pathfinder is.
 
+## Predictive helmsman
+
+The design rule the whole repo is built around: **the planner is physics-agnostic and the helmsman
+owns the physics.** A\* hands back a route that knows nothing about wind or turning circles — it is
+*intent*, not a rail — and the helmsman reconciles it with a hull that cannot point upwind or corner
+instantly. It steers at a **look-ahead point** that slides further along the path the faster the
+ship goes, and it starts each turn *before* the corner: from the sailing model's turning circle it
+computes a **turn-in distance** (`R·tan(θ/2)`, so it grows with speed and corner sharpness) and
+blends onto the next leg early, carving the corner instead of overshooting. When the course it
+wants is dead upwind it tacks to the nearest sailable edge. Like everything else here, the helmsman
+is a plain struct — a closed loop of it plus `FSailingModel` sails a zigzag to its goal in a unit
+test with no world.
+
 ## Trying it
 
-Open the project in UE 5.5, place an `ANavalNavDebugActor` and a few `ADangerZone`s in a level,
-and drag them around: the actor ticks in the editor viewport, so the route bends without
-entering PIE. Console: `naval.DrawGrid`, `naval.DrawCosts`, `naval.DrawPath`.
+**The demo.** Open the project in UE 5.5, make a **New Empty Level**, and press **Play** — the demo
+GameMode spawns a fleet, the wind, and a scatter of danger zones from code (one ship is given high
+power, so watch it sail straight through zones the others route around). Left-click the water to
+send the selected ship there, `Tab` cycles which ship you command, and `1`/`2`/`3` toggle the
+navigator / ship / grid overlays.
+
+**The planner on its own.** Place an `ANavalNavDebugActor` and a few `ADangerZone`s in a level and
+drag them around: the actor ticks in the editor viewport, so the route bends without entering PIE.
+Console: `naval.DrawGrid`, `naval.DrawCosts`, `naval.DrawPath`, `naval.Nav.Debug`, `naval.Ship.Debug`.
 
 Drop an `ASailingShipPawn` too, set `naval.Ship.Debug 1`, and sail it — possess it with an
 `ASailingShipPlayerController` (A/D rudder, W/S trim) or call `SetRudderInput`/`SetSailTrim`. It
 stalls head-to-wind, accelerates onto a reach, and turns only with way on. Point the wind with
 `naval.Wind.Yaw` and `naval.Wind.Strength`.
 
-Without an engine installed, the navigation and sailing cores still run:
+Without an engine installed, the navigation, sailing and helmsman cores still run:
 
 ```bash
-./Tools/AlgoSelfTest/run_tests.sh     # incl. an A*-vs-Dijkstra optimality proof + the sailing model
+./Tools/AlgoSelfTest/run_tests.sh     # A*-vs-Dijkstra optimality, the sailing model, and a
+                                      # closed-loop helmsman that sails a zigzag to its goal
 ```
 
 ## Roadmap
 
-Slice 3 — predictive helmsman that tacks upwind · Slice 4 — replanning triggers + demo map.
-Details in [docs/STATUS.md](docs/STATUS.md).
+Slice 4 — replanning triggers (threat change, drift, wind shift) with hysteresis, an Escaping state
+for boxed-in ships, and a hand-authored demo level. Details in [docs/STATUS.md](docs/STATUS.md).
