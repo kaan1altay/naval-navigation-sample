@@ -7,9 +7,20 @@
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
+#include "Navigation/NavalNavigatorComponent.h"
 #include "Ship/SailingShipPawn.h"
 #include "Ship/ShipPowerComponent.h"
 #include "Ship/WindSubsystem.h"
+
+namespace
+{
+	bool IsCVarOn(const TCHAR* Name)
+	{
+		const IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(Name);
+		return CVar && CVar->GetInt() != 0;
+	}
+}
 
 void ANavalNavDemoHUD::DrawHUD()
 {
@@ -73,22 +84,41 @@ void ANavalNavDemoHUD::DrawHUD()
 	DrawText(ShipLine, MediumFont, Margin + 16.0f, Margin + 82.0f, FLinearColor(1.0f, 0.92f, 0.6f), 1.1f);
 	DrawText(KeyMap, MediumFont, Margin + 16.0f, Margin + 116.0f, FLinearColor(0.78f, 0.82f, 0.88f), 1.0f);
 
-	// --- Wind compass, top-right: an arrow pointing where the wind blows TO --------------------
-	const FVector2D Centre(Canvas->SizeX - 110.0f, 110.0f);
-	const float Angle = FMath::DegreesToRadians(WindTowardYaw);
-	// World yaw 0 is +X (east); screen Y runs down, so negate the Y component to keep north up.
-	const FVector2D Dir(FMath::Cos(Angle), -FMath::Sin(Angle));
-	const FVector2D Perp(-Dir.Y, Dir.X);
-	const float Length = 50.0f + 40.0f * WindStrength;
-	const FVector2D Tip = Centre + Dir * Length;
-	const FVector2D Tail = Centre - Dir * Length;
-	const FLinearColor WindColour(0.55f, 0.82f, 1.0f);
-	const float Thickness = 6.0f;
+	// --- Selected-ship overlays, pinned to the screen edges below the scenario box -------------
+	// A block of lines on a translucent panel; overlay 1 (navigator) hugs the right edge, overlay 2
+	// (ship/wind) hugs the left. Each is shown only when its debug toggle (key 1 / key 2) is on.
+	auto DrawBlock = [&](const FString& Block, float X, float Y, float Width, const FLinearColor& TextColour)
+	{
+		TArray<FString> Lines;
+		Block.ParseIntoArray(Lines, TEXT("\n"), false);
+		const float LineHeight = 26.0f;
+		const float Pad = 10.0f;
+		const float PanelHeight = Lines.Num() * LineHeight + 2.0f * Pad;
 
-	DrawLine(Tail.X, Tail.Y, Tip.X, Tip.Y, WindColour, Thickness);
-	const FVector2D HeadBase = Tip - Dir * 28.0f;
-	DrawLine(Tip.X, Tip.Y, (HeadBase + Perp * 20.0f).X, (HeadBase + Perp * 20.0f).Y, WindColour, Thickness);
-	DrawLine(Tip.X, Tip.Y, (HeadBase - Perp * 20.0f).X, (HeadBase - Perp * 20.0f).Y, WindColour, Thickness);
-	// Label the head so there is no doubt which end is which.
-	DrawText(TEXT("W"), MediumFont, Tip.X + 8.0f, Tip.Y - 8.0f, WindColour, 1.1f);
+		FCanvasTileItem Panel(FVector2D(X, Y), FVector2D(Width, PanelHeight), FLinearColor(0.0f, 0.0f, 0.0f, 0.55f));
+		Panel.BlendMode = SE_BLEND_Translucent;
+		Canvas->DrawItem(Panel);
+		for (int32 Index = 0; Index < Lines.Num(); ++Index)
+		{
+			DrawText(Lines[Index], MediumFont, X + Pad, Y + Pad + Index * LineHeight, TextColour, 1.1f);
+		}
+	};
+
+	if (const ASailingShipPawn* Ship = PlayerOwner ? Cast<ASailingShipPawn>(PlayerOwner->GetPawn()) : nullptr)
+	{
+		const float BelowY = Margin + BoxHeight + 18.0f;
+		const float PanelWidth = 480.0f;
+
+		if (IsCVarOn(TEXT("naval.Nav.Debug")))
+		{
+			if (const UNavalNavigatorComponent* Nav = Ship->FindComponentByClass<UNavalNavigatorComponent>())
+			{
+				DrawBlock(Nav->GetStatusText(), Canvas->SizeX - Margin - PanelWidth, BelowY, PanelWidth, FLinearColor(1.0f, 0.95f, 0.55f));
+			}
+		}
+		if (IsCVarOn(TEXT("naval.Ship.Debug")))
+		{
+			DrawBlock(Ship->GetStatusText(), Margin, BelowY, PanelWidth, FLinearColor(0.90f, 0.94f, 1.0f));
+		}
+	}
 }

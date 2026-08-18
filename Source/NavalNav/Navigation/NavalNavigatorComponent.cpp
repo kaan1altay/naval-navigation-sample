@@ -478,11 +478,21 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 	}
 
 	// Look-ahead point (where the helm is aiming) and the predicted turn-in point (where it will
-	// begin the next corner). These two are the whole story of "predictive".
+	// begin the next corner). These two are the whole story of "predictive". The text lives on the
+	// HUD (GetStatusText), pinned to the screen edge, rather than floating in the world.
 	DrawDebugSphere(World, LastOutput.LookAheadPoint + Lift, 220.0f, 16, FColor(60, 230, 120), false, -1.0f, 0, 6.0f);
 	DrawDebugLine(World, Ship->GetActorLocation() + Lift, LastOutput.LookAheadPoint + Lift,
 		FColor(60, 230, 120), false, -1.0f, 0, 4.0f);
 	DrawDebugSphere(World, LastOutput.TurnInPoint + Lift, 180.0f, 12, FColor(255, 140, 40), false, -1.0f);
+#endif // ENABLE_DRAW_DEBUG
+}
+
+FString UNavalNavigatorComponent::GetStatusText() const
+{
+	if (!Ship)
+	{
+		return FString();
+	}
 
 	// This ship's power and whether it is currently sitting in water hostile to it.
 	const float ShipPower = GetShipPower();
@@ -493,17 +503,13 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 	}
 	const bool bHostile = SelfCost > NavalNav::OpenWaterCost + 0.01f;
 
-	const FString Readout = FString::Printf(
-		TEXT("Navigator: %s%s  | validations %d / replans %d (%s)\npower %.1f | hostile: %s\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
-		StateName(State), bPlayerControlled ? TEXT(" [player]") : TEXT(""),
+	return FString::Printf(
+		TEXT("NAVIGATOR%s\nstate: %s\nvalidations %d / replans %d (%s)\npower %.1f  |  hostile: %s\nwaypoint %d/%d  |  bearing err %.0f deg\nrudder %.2f  |  trim %.2f%s"),
+		bPlayerControlled ? TEXT("  [player]") : TEXT(""),
+		StateName(State),
 		ReplanPolicy.GetValidationCount(), ReplanCount, ReasonName(LastReplanReason),
 		ShipPower, bHostile ? TEXT("YES") : TEXT("no"),
-		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
-		LastOutput.BearingErrorDeg, LastOutput.RudderInput, LastOutput.SailTrim,
-		LastOutput.bTacking ? TEXT(" | TACKING") : TEXT(""));
-	const float HeadRad = FMath::DegreesToRadians(Ship->GetHeadingDegrees());
-	const FVector Starboard(FMath::Sin(HeadRad), -FMath::Cos(HeadRad), 0.0);
-	DrawDebugString(World, Ship->GetActorLocation() + Starboard * 1500.0 + FVector(0.0, 0.0, 550.0), Readout,
-		/*TestBaseActor=*/nullptr, FColor::Yellow, /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
-#endif // ENABLE_DRAW_DEBUG
+		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1), LastOutput.BearingErrorDeg,
+		LastOutput.RudderInput, LastOutput.SailTrim,
+		LastOutput.bTacking ? TEXT("  |  TACKING") : TEXT(""));
 }

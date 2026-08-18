@@ -94,6 +94,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Sailing")
 	bool IsSelected() const { return bSelected; }
 
+	/** Multi-line status text (heading, speed, rudder, trim, wind, off-wind) for the HUD overlay. */
+	UFUNCTION(BlueprintPure, Category = "Sailing")
+	FString GetStatusText() const;
+
 	/** Nudges the chase-cam boom length, clamped to a sensible range. Used by the demo's mouse-wheel zoom. */
 	UFUNCTION(BlueprintCallable, Category = "Sailing")
 	void AddCameraZoom(float Delta);

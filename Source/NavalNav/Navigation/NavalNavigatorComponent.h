@@ -92,6 +92,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
 	int32 GetValidationCount() const { return ReplanPolicy.GetValidationCount(); }
 
+	/** Multi-line status text (state, replans, power/hostile, waypoint/helm) for the HUD overlay. */
+	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
+	FString GetStatusText() const;
+
 	/** True once a player order was issued; the demo's auto-wander then leaves this ship alone. */
 	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
 	bool IsPlayerControlled() const { return bPlayerControlled; }

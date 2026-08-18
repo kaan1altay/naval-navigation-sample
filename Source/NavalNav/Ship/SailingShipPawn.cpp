@@ -259,15 +259,11 @@ void ASailingShipPawn::DrawShipDebug() const
 		/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/10.0f);
 
 	// Wind: a blue arrow through the ship, pointing the way the wind blows.
-	float WindStrength = FallbackWindStrength;
 	FVector WindToward(FMath::Cos(FMath::DegreesToRadians(FallbackWindFromYaw + 180.0f)),
 		FMath::Sin(FMath::DegreesToRadians(FallbackWindFromYaw + 180.0f)), 0.0);
-	float WindFromYaw = FallbackWindFromYaw;
 	if (UWindSubsystem* Wind = World->GetSubsystem<UWindSubsystem>())
 	{
-		WindStrength = Wind->GetWindStrength();
 		WindToward = Wind->GetWindDirection();
-		WindFromYaw = Wind->GetWindFromYaw();
 	}
 	// A blue arrow through the ship with a big, unambiguous head at the *downwind* end, so the sense
 	// (which way it blows) reads at a glance, plus a "W" at the head.
@@ -278,18 +274,27 @@ void ASailingShipPawn::DrawShipDebug() const
 		/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/10.0f);
 	DrawDebugString(World, WindHead + FVector(0.0, 0.0, 120.0), TEXT("W"), /*TestBaseActor=*/nullptr,
 		FColor(120, 190, 255), /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
+	// The text readout lives on the HUD (GetStatusText), pinned to the screen edge.
+#endif // ENABLE_DRAW_DEBUG
+}
+
+FString ASailingShipPawn::GetStatusText() const
+{
+	float WindStrength = FallbackWindStrength;
+	float WindFromYaw = FallbackWindFromYaw;
+	if (const UWorld* World = GetWorld())
+	{
+		if (UWindSubsystem* Wind = World->GetSubsystem<UWindSubsystem>())
+		{
+			WindStrength = Wind->GetWindStrength();
+			WindFromYaw = Wind->GetWindFromYaw();
+		}
+	}
 
 	const float AngleOffWind = FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromYaw);
-	const FString Readout = FString::Printf(
-		TEXT("%s\nheading %.0f deg | speed %.0f uu/s | rudder %.0f deg | trim %.2f\nwind %.0f%% | off-wind %.0f deg%s"),
+	return FString::Printf(
+		TEXT("SHIP  %s\nheading %.0f deg  |  speed %.0f uu/s\nrudder %.0f deg  |  trim %.2f\nwind %.0f%%  |  off-wind %.0f deg%s"),
 		*GetName(), State.HeadingDegrees, State.Speed, State.RudderAngleDegrees, State.SailTrim,
 		WindStrength * 100.0f, AngleOffWind,
 		AngleOffWind <= GetEffectiveParams().NoGoAngleDegrees ? TEXT("  (NO-GO)") : TEXT(""));
-
-	// Offset to the ship's port side (screen-left under the yaw-inheriting chase cam) so it does not
-	// collide with the navigator overlay (drawn to starboard); matched font scale to it.
-	const FVector Port(-FMath::Sin(HeadingRad), FMath::Cos(HeadingRad), 0.0);
-	DrawDebugString(World, GetActorLocation() + Port * 1500.0 + FVector(0.0, 0.0, 550.0), Readout,
-		/*TestBaseActor=*/nullptr, FColor::White, /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
-#endif // ENABLE_DRAW_DEBUG
 }
