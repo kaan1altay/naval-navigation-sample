@@ -102,6 +102,9 @@ private:
 	/** Spawns one flat sea plane. bGridTexture uses the engine grid material (a motion reference). */
 	void SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour, bool bGridTexture);
 
+	/** Scatters dark islets just outside the grid to frame the play area. */
+	void SpawnRocks();
+
 	/** Draws a persistent frame around the navigable grid so the playable edge is always visible. */
 	void DrawBoundaryFrame() const;
 

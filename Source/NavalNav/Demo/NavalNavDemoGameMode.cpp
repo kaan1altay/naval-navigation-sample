@@ -128,8 +128,64 @@ void ANavalNavDemoGameMode::SpawnEnvironment()
 	// over the navigable grid so the playable area is obvious. The inner plane is a hair higher.
 	const float GridWorld = 2.0f * FMath::Max(static_cast<float>(GridConfig.Extent.X), static_cast<float>(GridConfig.Extent.Y));
 	const FVector Centre(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
+	// Dark plain sea out to the horizon; a tiling grid exactly over the navigable area — it both
+	// marks out the playable area and gives a motion reference as ships slide across it.
 	SpawnSeaPlane(Centre + FVector(0, 0, -8), FMath::Max(GridWorld, FieldRadius * 2.0f) * 5.0f, SeaColor * 0.35f, /*bGridTexture=*/false);
-	SpawnSeaPlane(Centre + FVector(0, 0, -4), GridWorld, SeaColor, /*bGridTexture=*/false);
+	SpawnSeaPlane(Centre + FVector(0, 0, -4), GridWorld, SeaColor, /*bGridTexture=*/true);
+
+	SpawnRocks();
+}
+
+void ANavalNavDemoGameMode::SpawnRocks()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	UStaticMesh* RockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (!RockMesh)
+	{
+		return;
+	}
+
+	// Dark islets in a ring just OUTSIDE the navigable grid (on the plain dark sea, where ships never
+	// go), so they frame the play area and add a fixed reference near the edges without ever being
+	// sailed into. Deterministic placement so the scene is stable.
+	const FVector Centre(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
+	const float Extent = FMath::Max(static_cast<float>(GridConfig.Extent.X), static_cast<float>(GridConfig.Extent.Y));
+	const int32 Count = 12;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float Angle = (2.0f * UE_PI * Index) / Count + 0.35f;
+		const float Radius = Extent * 1.12f + (Index % 3) * (Extent * 0.10f);
+		const FVector Loc = Centre + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0) * Radius + FVector(0, 0, -100.0);
+
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AStaticMeshActor* Rock = World->SpawnActor<AStaticMeshActor>(Loc, FRotator::ZeroRotator, Params);
+		if (!Rock)
+		{
+			continue;
+		}
+		Rock->SetMobility(EComponentMobility::Movable);
+		if (UStaticMeshComponent* Mesh = Rock->GetStaticMeshComponent())
+		{
+			Mesh->SetStaticMesh(RockMesh);
+			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			const float Scale = 8.0f + (Index % 4) * 3.0f; // ~800..1700 uu across
+			Rock->SetActorScale3D(FVector(Scale, Scale, Scale * 0.6f));
+			if (Base)
+			{
+				UMaterialInstanceDynamic* RockMat = UMaterialInstanceDynamic::Create(Base, this);
+				RockMat->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.10f, 0.10f, 0.12f));
+				RockMat->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
+				Mesh->SetMaterial(0, RockMat);
+			}
+		}
+	}
 }
 
 void ANavalNavDemoGameMode::SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour, bool bGridTexture)

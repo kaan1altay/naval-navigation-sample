@@ -132,6 +132,12 @@ private:
 	/** A bright ring on the water marking the selected ship. Always on, not a debug toggle. */
 	void DrawSelectionRing() const;
 
+	/** Pushes the current position into the wake buffer and draws a short fading trail (all ships). */
+	void UpdateAndDrawWake();
+
+	/** Recent positions for the wake trail, oldest first. */
+	TArray<FVector> WakePoints;
+
 	/** Root the visuals and camera hang off. The hull never collides, so a scene root is enough. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> ShipRoot;

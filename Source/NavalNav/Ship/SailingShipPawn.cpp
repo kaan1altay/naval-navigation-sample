@@ -112,6 +112,8 @@ void ASailingShipPawn::Tick(float DeltaSeconds)
 
 	StepSailing(DeltaSeconds);
 
+	UpdateAndDrawWake();
+
 	if (bSelected)
 	{
 		DrawSelectionRing();
@@ -123,6 +125,41 @@ void ASailingShipPawn::Tick(float DeltaSeconds)
 	{
 		DrawShipDebug();
 	}
+}
+
+void ASailingShipPawn::UpdateAndDrawWake()
+{
+#if ENABLE_DRAW_DEBUG
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// Add a point only once the ship has made some way, so a stationary ship does not pile them up.
+	const FVector Position = GetActorLocation();
+	if (WakePoints.Num() == 0 || FVector::Dist2D(Position, WakePoints.Last()) > 250.0f)
+	{
+		WakePoints.Add(Position);
+		const int32 MaxPoints = 16;
+		if (WakePoints.Num() > MaxPoints)
+		{
+			WakePoints.RemoveAt(0, WakePoints.Num() - MaxPoints);
+		}
+	}
+
+	// Fade from a dim tail to a bright, thicker head — cheap, reads clearly as speed and direction.
+	const int32 Num = WakePoints.Num();
+	for (int32 Index = 1; Index < Num; ++Index)
+	{
+		const float Frac = static_cast<float>(Index) / static_cast<float>(Num - 1);
+		const uint8 Value = static_cast<uint8>(80.0f + 175.0f * Frac);
+		const FColor Colour(Value, Value, static_cast<uint8>(FMath::Min(255, Value + 25)));
+		const float Thickness = 6.0f + 12.0f * Frac;
+		DrawDebugLine(World, WakePoints[Index - 1] + FVector(0, 0, 15), WakePoints[Index] + FVector(0, 0, 15),
+			Colour, /*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, Thickness);
+	}
+#endif // ENABLE_DRAW_DEBUG
 }
 
 void ASailingShipPawn::DrawSelectionRing() const
