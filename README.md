@@ -10,7 +10,7 @@ ship that outguns a zone sails straight through it; a weaker one goes around.
 - **Status:** Slice 4 — feature-complete (replanning, escape, dynamic zones, demo scenarios) — see **[docs/STATUS.md](docs/STATUS.md)**
 
 > Written from scratch as a portfolio piece. It builds with UE 5.5 + Visual Studio 2022 and all
-> 27 automation tests pass in-engine; the navigation, sailing, helmsman and replanning cores are
+> 30 automation tests pass in-engine; the navigation, sailing, helmsman and replanning cores are
 > also verified by an engine-free harness that runs with a plain compiler. `docs/STATUS.md` has the
 > details.
 
@@ -65,7 +65,13 @@ reach, and easing off again running downwind. Speed then chases a quadratic-drag
 pinned to `MaxSpeed` on the best point of sail, and the rudder only bites once the ship has way on
 — together, exactly the constraints that make the Slice 3 follower have to *think* about the wind
 rather than drive straight lines. The math lives in a plain `FSailingModel` struct so it is
-unit-tested without a world, the same way the pathfinder is.
+unit-tested without a world, the same way the pathfinder is. (A stationary ship keeps a small
+at-rest yaw authority so it can turn out of the no-go cone instead of getting stuck head-to-wind;
+the helmsman bears away to a driving point of sail to recover.)
+
+Wind-aware *planning* — routing around legs that would be dead upwind — is deliberate future work.
+The planner stays physics-agnostic: A\* knows nothing about the wind, and the helmsman reconciles
+its geometric route with what the hull can actually sail.
 
 ## Predictive helmsman
 
@@ -113,12 +119,13 @@ number keys:
 | `6` | Moving zone — a patrol slides across a route → mid-voyage replan |
 | `7` | Power contrast — weak (blue) vs strong (gold), same start/goal → different routes |
 | `8` | Enclosure — a ship ringed by zones with one weak gap → escapes through it |
-| `9` | Power drop — a strong ship crossing a zone; press `P` to weaken it → it re-solves around |
+| `9` | Power drop — a strong ship crossing a zone; press `O`/`P` to change its power → it re-solves |
 
 Left-click the water to move the selected ship (a player order — it stops wandering and its hull
 brightens), `Tab` cycles ships, `1`/`2`/`3` toggle the navigator / ship / grid overlays, the
-**arrow keys** steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), `P` weakens the
-selected ship, and the mouse-wheel zooms. A HUD shows the scenario, the live wind and the key map.
+**arrow keys** steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), **`O`/`P`**
+strengthen / weaken the selected ship, and the mouse-wheel zooms. A HUD shows the scenario, the live
+wind, the selected ship's power and the key map.
 
 **The planner on its own.** Place an `ANavalNavDebugActor` and a few `ADangerZone`s in a level and
 drag them around: the actor ticks in the editor viewport, so the route bends without entering PIE.

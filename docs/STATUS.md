@@ -1,9 +1,9 @@
 # Project status
 
-_Last updated: 2026-08-18 — Slice 4 + polish pass 1. **Feature-complete; frozen — fixes only.**_
+_Last updated: 2026-08-18 — Slice 4 + polish passes 1–2. **Feature-complete; frozen — fixes only.**_
 
-> **Now building on Windows.** Slices 1–4 (plus polish pass 1) compile with UE 5.5 + Visual Studio
-> 2022 (MSVC 14.44) via Unreal Build Tool, and all **27 automation tests pass in-engine**
+> **Now building on Windows.** Slices 1–4 (plus polish passes 1–2) compile with UE 5.5 + Visual
+> Studio 2022 (MSVC 14.44) via Unreal Build Tool, and all **30 automation tests pass in-engine**
 > (`Automation RunTests NavalNav`, headless, `-nullrhi`). The Linux notes below are the
 > history of how Slice 1 was first authored; they no longer describe the only place the code
 > has run.
@@ -271,9 +271,10 @@ without disturbing the shared stamped layer.
 
 Controls: left-click to move the selected ship (a player order — it stops wandering and its hull
 brightens), `Tab` to cycle ships, `1`/`2`/`3` to toggle the navigator / ship / grid overlays,
-**arrow keys** to steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), `P` to weaken
-the selected ship, mouse-wheel to zoom. The HUD shows the scenario, the live wind (with a compass
-arrow) and the key map.
+**arrow keys** to steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), **`O`/`P`** to
+strengthen / weaken the selected ship (its route re-solves as it crosses the hostility bands),
+mouse-wheel to zoom. The HUD shows the scenario, the live wind (with a compass arrow), the selected
+ship's power and the key map.
 
 **What is tunable** (`FReplanPolicyParams` on the navigator): the five trigger toggles;
 `OffRouteDistance`, `OffRouteGraceSeconds`; `BlockedCostThreshold`, `PathBlockSampleSpacing`,
@@ -323,9 +324,42 @@ they made it work as intended. 27 automation tests pass (Slice 4's 26 plus a new
   re-validations that change nothing. Split into an honest `validations N / replans M` — a replan is
   only counted when a new path is actually adopted — and `MaxPathAge` raised to 30 s.
 
-**New tunables.** Helmsman: `MinSteerageTrim`, `ArrivalTurnRadiusFactor`, `ArrivalBehindFactor`.
+**New tunables.** Helmsman: `MinSteerageTrim`, `ArrivalBehindFactor`, and orbit handling (see the
+polish 2 note — the instant turning-circle arrival that first shipped here was replaced by
+`OrbitGiveUpTurnDeg` when it turned out to eat fresh move orders near the ship).
 Demo GameMode: `OverlayObserverPower`, `SeaColor`. Pawn: `HullColor`. Wind: `AddWindYaw` /
 `AddWindStrength`. **New keys:** arrow keys steer the wind.
+
+## Polish pass 2 (play-test fixes)
+
+A second play-test. 30 automation tests pass (27 plus new in-irons recovery, a random-goal/wind
+soak, and a fresh-order-near-the-ship manoeuvre test).
+
+- **Left-click stopped issuing move orders** (regression from polish 1's orbit fix). The instant
+  "arrive once inside the turning circle" rule also fired on a *fresh* order, so clicking near or
+  beside a fast ship was read as an immediate arrival and nothing happened. Replaced with orbit
+  *detection*: the ship gives up on a goal only after it has demonstrably circled it
+  (`OrbitGiveUpTurnDeg`), so a fresh order always manoeuvres first.
+- **Ships stalled head-to-wind ("in irons").** At zero speed the steering authority was zero, so a
+  bow pointed into the no-go cone could never turn out and stayed stalled forever. The model gains a
+  small at-rest yaw floor (`MinYawAuthorityAtRest`) — turning only, never drive — and the helmsman
+  recovers by bearing away past the no-go to a point of sail that makes drive (`IronsBearAwayDeg` /
+  `IronsSpeedRatio`) until the ship has way on, then pointing back up. It never commands a heading
+  inside the cone. (Wind-aware *planning* — routing around upwind legs — stays deliberate future
+  work; the planner is physics-agnostic.)
+- **Overlays 1 and 2 overlapped and differed in size.** The navigator overlay is offset to the
+  ship's starboard and the ship overlay to port (screen-right / screen-left under the yaw-inheriting
+  chase cam), both at the same font scale.
+- **Ship power was invisible and `P` seemed to do nothing.** The navigator overlay and the HUD now
+  show power (and "hostile: yes/no"); `O`/`P` step it up/down (clamped, logged). The real cause of
+  "nothing re-routed" was that a replan compared the fresh plan against the current path's *stale*
+  cost; it now re-costs the current path for the ship's current power, so a route gone hostile reads
+  as expensive and the safe reroute wins.
+- **Wind indicator** is now a proper arrow (big head at the downwind end, "W" label) instead of a
+  line, in the ship overlay and the HUD compass.
+
+**New tunables.** Model: `MinYawAuthorityAtRest`. Helmsman: `IronsSpeedRatio`, `IronsBearAwayDeg`,
+`OrbitGiveUpTurnDeg`. **New keys:** `O` / `P` strengthen / weaken the selected ship.
 
 ## Did it compile?
 
