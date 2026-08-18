@@ -20,6 +20,13 @@ namespace
 		TEXT("0 = off, 1 = on."),
 		ECVF_Cheat);
 
+	TAutoConsoleVariable<int32> CVarNavDebugAllShips(
+		TEXT("naval.Nav.DebugAllShips"),
+		0,
+		TEXT("Draw the look-ahead / turn-in markers for every ship, not just the selected one.\n")
+		TEXT("Routes are always drawn for all ships; 0 = markers on the selected ship only, 1 = all."),
+		ECVF_Cheat);
+
 	const TCHAR* StateName(ENavigatorState State)
 	{
 		switch (State)
@@ -462,6 +469,14 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 		}
 	}
 
+	// The look-ahead / turn-in markers and the text are for the selected ship only by default, so a
+	// whole fleet's worth does not clutter the view. The routes above are always drawn.
+	const bool bDetail = Ship->IsSelected() || CVarNavDebugAllShips.GetValueOnGameThread() != 0;
+	if (!bDetail)
+	{
+		return;
+	}
+
 	// Look-ahead point (where the helm is aiming) and the predicted turn-in point (where it will
 	// begin the next corner). These two are the whole story of "predictive".
 	DrawDebugSphere(World, LastOutput.LookAheadPoint + Lift, 220.0f, 16, FColor(60, 230, 120), false, -1.0f, 0, 6.0f);
@@ -486,8 +501,6 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
 		LastOutput.BearingErrorDeg, LastOutput.RudderInput, LastOutput.SailTrim,
 		LastOutput.bTacking ? TEXT(" | TACKING") : TEXT(""));
-	// Offset to the ship's starboard side so it never collides with the ship overlay (drawn to port).
-	// The chase cam inherits the ship's yaw, so starboard reads as screen-right.
 	const float HeadRad = FMath::DegreesToRadians(Ship->GetHeadingDegrees());
 	const FVector Starboard(FMath::Sin(HeadRad), -FMath::Cos(HeadRad), 0.0);
 	DrawDebugString(World, Ship->GetActorLocation() + Starboard * 1500.0 + FVector(0.0, 0.0, 550.0), Readout,
