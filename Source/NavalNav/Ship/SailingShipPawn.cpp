@@ -155,7 +155,8 @@ void ASailingShipPawn::AddCameraZoom(float Delta)
 {
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = FMath::Clamp(CameraBoom->TargetArmLength + Delta, 2500.0f, 20000.0f);
+		// Clamp zoom so the camera never pulls back far enough to see the sea's edge.
+		CameraBoom->TargetArmLength = FMath::Clamp(CameraBoom->TargetArmLength + Delta, 3000.0f, 14000.0f);
 	}
 }
 

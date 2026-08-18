@@ -141,8 +141,9 @@ void ANavalNavDemoGameMode::SpawnEnvironment()
 				Mesh->SetStaticMesh(Plane);
 			}
 			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			// The plane primitive is 100 uu across; cover a bit more than the whole grid.
-			const float PlaneScale = (Extent * 2.4f) / 100.0f;
+			// The plane primitive is 100 uu across. Cover several times the grid so the sea's edge is
+			// never in shot even at maximum zoom-out; the sky fills the horizon beyond it anyway.
+			const float PlaneScale = FMath::Max(Extent, FieldRadius) * 10.0f / 100.0f;
 			Sea->SetActorScale3D(FVector(PlaneScale, PlaneScale, 1.0f));
 
 			if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
@@ -361,6 +362,11 @@ void ANavalNavDemoGameMode::DrawGridOverlay() const
 		return;
 	}
 
+	// Stamp the layer for a fixed "overlay observer" every frame, so the drawn threat does not flip
+	// between ships of different power as they replan — that was half the flicker.
+	SeaGrid->ObserverPowerLevel = OverlayObserverPower;
+	SeaGrid->HostilityThreshold = 0.0f;
+	SeaGrid->MarkThreatDirty();
 	SeaGrid->EnsureThreatUpToDate();
 
 	FVector ViewLocation(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
@@ -372,9 +378,11 @@ void ANavalNavDemoGameMode::DrawGridOverlay() const
 		}
 	}
 
+	// Draw with a lifetime a little longer than a frame, redrawn every frame: any single-frame gap
+	// in the debug-line batch is covered by the previous frame's cells, so the overlay is steady.
 	const FSeaGridDebugDrawSettings Settings;
 	FSeaGridDebugDraw::DrawGrid(World, SeaGrid->GetGrid(), ViewLocation, Settings,
-		FSeaGridDebugDraw::IsCostDrawEnabled(), /*Duration=*/0.0f);
+		FSeaGridDebugDraw::IsCostDrawEnabled(), /*Duration=*/0.15f);
 }
 
 void ANavalNavDemoGameMode::DrawZoneAnnotations() const

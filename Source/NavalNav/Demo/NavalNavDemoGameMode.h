@@ -72,6 +72,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
 	FLinearColor SeaColor = FLinearColor(0.02f, 0.09f, 0.22f);
 
+	/** Ship power the grid overlay is stamped for, so the drawn threat stays steady as ships replan. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo", meta = (ClampMin = "0.0"))
+	float OverlayObserverPower = 1.0f;
+
 	/**
 	 * Tears down the fleet and zones and sets up scenario 5..9 deterministically. Called by the
 	 * demo controller's number keys.
