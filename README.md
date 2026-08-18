@@ -10,7 +10,7 @@ ship that outguns a zone sails straight through it; a weaker one goes around.
 - **Status:** Slice 4 — feature-complete (replanning, escape, dynamic zones, demo scenarios) — see **[docs/STATUS.md](docs/STATUS.md)**
 
 > Written from scratch as a portfolio piece. It builds with UE 5.5 + Visual Studio 2022 and all
-> 26 automation tests pass in-engine; the navigation, sailing, helmsman and replanning cores are
+> 27 automation tests pass in-engine; the navigation, sailing, helmsman and replanning cores are
 > also verified by an engine-free harness that runs with a plain compiler. `docs/STATUS.md` has the
 > details.
 
@@ -115,8 +115,10 @@ number keys:
 | `8` | Enclosure — a ship ringed by zones with one weak gap → escapes through it |
 | `9` | Power drop — a strong ship crossing a zone; press `P` to weaken it → it re-solves around |
 
-Left-click the water to move the selected ship, `Tab` cycles ships, `1`/`2`/`3` toggle the
-navigator / ship / grid overlays, mouse-wheel zooms.
+Left-click the water to move the selected ship (a player order — it stops wandering and its hull
+brightens), `Tab` cycles ships, `1`/`2`/`3` toggle the navigator / ship / grid overlays, the
+**arrow keys** steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), `P` weakens the
+selected ship, and the mouse-wheel zooms. A HUD shows the scenario, the live wind and the key map.
 
 **The planner on its own.** Place an `ANavalNavDebugActor` and a few `ADangerZone`s in a level and
 drag them around: the actor ticks in the editor viewport, so the route bends without entering PIE.

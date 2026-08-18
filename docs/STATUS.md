@@ -1,9 +1,9 @@
 # Project status
 
-_Last updated: 2026-08-18 — end of Slice 4. **Feature-complete; the code is now frozen for polish.**_
+_Last updated: 2026-08-18 — Slice 4 + polish pass 1. **Feature-complete; frozen — fixes only.**_
 
-> **Now building on Windows.** Slices 1–4 compile with UE 5.5 + Visual Studio 2022
-> (MSVC 14.44) via Unreal Build Tool, and all **26 automation tests pass in-engine**
+> **Now building on Windows.** Slices 1–4 (plus polish pass 1) compile with UE 5.5 + Visual Studio
+> 2022 (MSVC 14.44) via Unreal Build Tool, and all **27 automation tests pass in-engine**
 > (`Automation RunTests NavalNav`, headless, `-nullrhi`). The Linux notes below are the
 > history of how Slice 1 was first authored; they no longer describe the only place the code
 > has run.
@@ -269,8 +269,11 @@ without disturbing the shared stamped layer.
 | `8` | Enclosure | a ship ringed by zones with one weak gap → escapes through it |
 | `9` | Power drop | a strong ship crossing a zone; press `P` to weaken it → it re-solves around |
 
-Controls carry over: left-click to move the selected ship, `Tab` to cycle ships, `1`/`2`/`3` to
-toggle the navigator / ship / grid overlays, mouse-wheel to zoom.
+Controls: left-click to move the selected ship (a player order — it stops wandering and its hull
+brightens), `Tab` to cycle ships, `1`/`2`/`3` to toggle the navigator / ship / grid overlays,
+**arrow keys** to steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), `P` to weaken
+the selected ship, mouse-wheel to zoom. The HUD shows the scenario, the live wind (with a compass
+arrow) and the key map.
 
 **What is tunable** (`FReplanPolicyParams` on the navigator): the five trigger toggles;
 `OffRouteDistance`, `OffRouteGraceSeconds`; `BlockedCostThreshold`, `PathBlockSampleSpacing`,
@@ -284,6 +287,45 @@ Escape picks a single target cell and plans to it; it does not continuously re-e
 mid-run beyond the ordinary Following triggers once it is clear. Escape re-entry is guarded only by
 `EscapeCostThreshold` (no explicit cooldown), which is fine because A\* routes the resumed leg
 around the zone; a pathologically moving zone could in principle re-trigger it.
+
+## Polish pass 1 (play-test fixes)
+
+A play-test after Slice 4 turned up presentation and behaviour bugs; none changed the feature set,
+they made it work as intended. 27 automation tests pass (Slice 4's 26 plus a new no-orbit test).
+
+**Presentation.**
+- **Grey ships → per-ship colour.** The hull tint silently no-op'd: the dynamic material was built
+  from the cone's *default* material, which has no `Color` parameter. Ships are now explicitly based
+  on `BasicShapeMaterial` (verified to expose `Color`), and the player-selected ship is brightened.
+- **Zone discs → banded glow + label.** Discs use an additive, two-sided emissive material (a
+  see-through glow, not an opaque coin), coloured by a four-band power ramp (green/yellow/orange/red),
+  and every zone carries an always-on rim ring and a `P n` power number.
+- **Sea and camera.** The sea plane now covers ~10× the field so its edge is never in shot, and
+  zoom-out is clamped to keep it that way.
+- **Grid overlay flicker.** Two causes fixed: the overlay is stamped for a fixed `OverlayObserverPower`
+  each frame (so the drawn threat no longer flips as ships of different power replan), and it is drawn
+  with a lifetime slightly longer than a frame (so a single-frame gap in the debug-line batch is
+  covered by the previous frame).
+- **HUD.** Scenario title, live wind (with a compass arrow) and the key map are drawn to a Canvas HUD
+  in a large font on a translucent box, replacing the tiny on-screen debug lines.
+
+**Behaviour.**
+- **Ships orbiting the goal.** Arrival slowdown eased the sheets so far the ship lost the steerage
+  way it needs to turn (zero yaw at rest), so it circled the goal. Fix: a `MinSteerageTrim` floor
+  while following, plus recognising that a goal *inside* the ship's turning circle is reached once
+  within `ArrivalTurnRadiusFactor` × turn radius (or once it slips behind). Covered by a new test.
+- **Player orders hijacked by wander.** A left-click is now a *player order*: the ship stops
+  wandering, and a click while Escaping sets the goal to resume once clear rather than steering back
+  into danger.
+- **Wind had no visible effect.** The console cvars did work, but nothing showed it; arrow keys now
+  steer the wind live (clearing any stale cvar override), the HUD shows it, and changes are logged.
+- **Replan counter climbed on static routes.** It counted every policy firing, including periodic
+  re-validations that change nothing. Split into an honest `validations N / replans M` — a replan is
+  only counted when a new path is actually adopted — and `MaxPathAge` raised to 30 s.
+
+**New tunables.** Helmsman: `MinSteerageTrim`, `ArrivalTurnRadiusFactor`, `ArrivalBehindFactor`.
+Demo GameMode: `OverlayObserverPower`, `SeaColor`. Pawn: `HullColor`. Wind: `AddWindYaw` /
+`AddWindStrength`. **New keys:** arrow keys steer the wind.
 
 ## Did it compile?
 
@@ -338,9 +380,9 @@ an otherwise avoidable zone.
 1. **Run the demo.** With the demo GameMode set as `GlobalDefaultGameMode`: open the editor, make
    a **New Empty Level** (or any level without its own GameMode override) and press **Play**. Use
    keys **5–9** to pick a scenario (see the table above), left-click to move the selected ship,
-   `Tab` to cycle ships, `1`/`2`/`3` for the overlays, `P` for the power-drop scenario. Headless
-   smoke tests confirm the GameMode spawns, plans and replans without warnings, but the *feel* is
-   best judged in a viewport.
+   `Tab` to cycle ships, `1`/`2`/`3` for the overlays, arrow keys for the wind, `P` for the
+   power-drop scenario. Headless smoke tests confirm the GameMode spawns, plans and replans without
+   warnings, but the *feel* is best judged in a viewport.
 2. **No `.umap`.** The whole demo is spawned from code, deliberately — nothing to author, nothing to
    break on clone. A hand-authored map with nicer meshes would be pure polish.
 3. **The tacker does not beat to windward** (Slice 3), and **replanning is A\* from scratch, not
