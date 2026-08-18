@@ -68,9 +68,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
 	bool bAutoWander = true;
 
-	/** Colour of the sea plane. */
+	/** Colour of the navigable sea (a mid blue, matte). The outer sea is a darker desaturated navy. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
-	FLinearColor SeaColor = FLinearColor(0.02f, 0.09f, 0.22f);
+	FLinearColor SeaColor = FLinearColor(0.035f, 0.12f, 0.30f);
 
 	/** Ship power the grid overlay is stamped for, so the drawn threat stays steady as ships replan. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo", meta = (ClampMin = "0.0"))
@@ -99,14 +99,17 @@ private:
 	/** Spawns a sun, sky and the sea so an empty level is actually visible. */
 	void SpawnEnvironment();
 
-	/** Spawns one flat sea plane. bGridTexture uses the engine grid material (a motion reference). */
-	void SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour, bool bGridTexture);
+	/** Spawns one flat matte sea plane of the given colour (no grid material — the water stays blue). */
+	void SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour);
 
 	/** Scatters dark islets just outside the grid to frame the play area. */
 	void SpawnRocks();
 
 	/** Draws a persistent frame around the navigable grid so the playable edge is always visible. */
 	void DrawBoundaryFrame() const;
+
+	/** Draws a sparse dark-blue lattice over the navigable area (a nautical-chart motion reference). */
+	void DrawChartLattice() const;
 
 	/** Destroys every ship and danger zone, ready for a fresh scenario. */
 	void ClearScenarioActors();

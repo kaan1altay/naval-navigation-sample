@@ -371,11 +371,13 @@ user's call.
   default zoom, on a matte material (roughness 1) so the strong sun does not wash the colour to
   white. Fleet colours are high-contrast against the blue sea: flagship gold-orange, escorts
   crimson. The selected ship keeps its colour and gets a bright cyan ring on the water.
-- **The navigable area is obvious.** A persistent bright frame is drawn around the grid; the sea is
-  a huge dark plane (so the horizon is never a black edge) with a tiling grid material over the
-  navigable area; and a click outside the grid is rejected with a centred "Outside navigable area"
-  message instead of sending a ship into blank sea.
-- **Motion reference.** The grid-textured inner sea, a ring of dark islets just outside the grid,
+- **The navigable area is obvious.** A persistent bright, thin cyan frame is drawn around the grid;
+  the navigable water is a matte mid blue, the sea beyond it a huge, darker, desaturated navy plane
+  (so the horizon is never a black edge and the outside clearly reads as "not playable"); and a
+  click outside the grid is rejected with a centred "Outside navigable area" message instead of
+  sending a ship into blank sea.
+- **Motion reference.** A sparse dark-blue lattice (every ~5 grid cells) over the navigable water —
+  a nautical-chart look, no grey grid material — plus a ring of dark islets just outside the grid
   and a short fading wake behind every ship.
 - **Overlay text moved to the HUD edges.** Overlay 1 (navigator) is pinned to the right screen edge
   and overlay 2 (ship/wind) to the left, on translucent panels, for the *selected ship only*, shown

@@ -84,6 +84,7 @@ void ANavalNavDemoGameMode::Tick(float DeltaSeconds)
 	// The scenario title, wind and key map now live on the HUD (ANavalNavDemoHUD); here we only draw
 	// the world-space overlays.
 	DrawBoundaryFrame();
+	DrawChartLattice();
 	DrawGridOverlay();
 	DrawZoneAnnotations();
 }
@@ -124,14 +125,15 @@ void ANavalNavDemoGameMode::SpawnEnvironment()
 		}
 	}
 
-	// Two sea planes: a huge dark one so the horizon is never a black edge, and a lighter one exactly
-	// over the navigable grid so the playable area is obvious. The inner plane is a hair higher.
+	// Two matte sea planes, both blue — never a grey grid material. A huge, darker, desaturated navy
+	// one out to the horizon reads clearly as "not playable"; a mid-blue one exactly over the
+	// navigable grid marks the play area. The inner plane sits a hair higher. The chart lattice
+	// (DrawChartLattice, in Tick) supplies the motion reference over the inner water.
 	const float GridWorld = 2.0f * FMath::Max(static_cast<float>(GridConfig.Extent.X), static_cast<float>(GridConfig.Extent.Y));
 	const FVector Centre(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
-	// Dark plain sea out to the horizon; a tiling grid exactly over the navigable area — it both
-	// marks out the playable area and gives a motion reference as ships slide across it.
-	SpawnSeaPlane(Centre + FVector(0, 0, -8), FMath::Max(GridWorld, FieldRadius * 2.0f) * 5.0f, SeaColor * 0.35f, /*bGridTexture=*/false);
-	SpawnSeaPlane(Centre + FVector(0, 0, -4), GridWorld, SeaColor, /*bGridTexture=*/true);
+	const FLinearColor OuterSea(0.010f, 0.028f, 0.060f); // darker, desaturated navy — clearly outside
+	SpawnSeaPlane(Centre + FVector(0, 0, -8), FMath::Max(GridWorld, FieldRadius * 2.0f) * 5.0f, OuterSea);
+	SpawnSeaPlane(Centre + FVector(0, 0, -4), GridWorld, SeaColor);
 
 	SpawnRocks();
 }
@@ -188,7 +190,7 @@ void ANavalNavDemoGameMode::SpawnRocks()
 	}
 }
 
-void ANavalNavDemoGameMode::SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour, bool bGridTexture)
+void ANavalNavDemoGameMode::SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour)
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -218,16 +220,8 @@ void ANavalNavDemoGameMode::SpawnSeaPlane(const FVector& Centre, float WorldSize
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Sea->SetActorScale3D(FVector(WorldSize / 100.0f, WorldSize / 100.0f, 1.0f)); // the plane primitive is 100 uu
 
-	if (bGridTexture)
-	{
-		// The engine grid material tiles with world position — a cheap, clear motion reference that
-		// also marks out the navigable area distinctly from the plain sea beyond it.
-		if (UMaterialInterface* Grid = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial")))
-		{
-			Mesh->SetMaterial(0, Grid);
-		}
-	}
-	else if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	// A plain matte blue: Color carries the sea tint and Roughness 1 keeps the sun from washing it out.
+	if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
 	{
 		UMaterialInstanceDynamic* SeaMaterial = UMaterialInstanceDynamic::Create(Base, this);
 		SeaMaterial->SetVectorParameterValue(TEXT("Color"), Colour);
@@ -250,14 +244,46 @@ void ANavalNavDemoGameMode::DrawBoundaryFrame() const
 	const double MinY = GridConfig.Center.Y - GridConfig.Extent.Y;
 	const double MaxY = GridConfig.Center.Y + GridConfig.Extent.Y;
 	const double Z = 40.0;
-	const FColor Frame(90, 220, 255);
-	const float Thickness = 30.0f;
+	const FColor Frame(90, 220, 255); // bright cyan, kept thin
+	const float Thickness = 12.0f;
 
 	const FVector A(MinX, MinY, Z), B(MaxX, MinY, Z), C(MaxX, MaxY, Z), D(MinX, MaxY, Z);
 	DrawDebugLine(World, A, B, Frame, false, -1.0f, 0, Thickness);
 	DrawDebugLine(World, B, C, Frame, false, -1.0f, 0, Thickness);
 	DrawDebugLine(World, C, D, Frame, false, -1.0f, 0, Thickness);
 	DrawDebugLine(World, D, A, Frame, false, -1.0f, 0, Thickness);
+#endif // ENABLE_DRAW_DEBUG
+}
+
+void ANavalNavDemoGameMode::DrawChartLattice() const
+{
+#if ENABLE_DRAW_DEBUG
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// A sparse lattice of thin dark-blue lines over the navigable water — a nautical-chart look that
+	// gives a fixed reference for ship motion without a grey grid material. Every few cells, so it
+	// stays sparse; drawn each frame (lifetime -1) so it refreshes with the boundary frame.
+	const double MinX = GridConfig.Center.X - GridConfig.Extent.X;
+	const double MaxX = GridConfig.Center.X + GridConfig.Extent.X;
+	const double MinY = GridConfig.Center.Y - GridConfig.Extent.Y;
+	const double MaxY = GridConfig.Center.Y + GridConfig.Extent.Y;
+	const double Z = 30.0; // between the sea planes and the boundary frame
+	const double Spacing = FMath::Max(GridConfig.CellSize, 1.0f) * 5.0; // every ~5 grid cells
+	const FColor Line(20, 60, 120); // dark blue, reads as chart ink on the mid-blue sea
+	const float Thickness = 4.0f;
+
+	for (double X = MinX; X <= MaxX + 1.0; X += Spacing)
+	{
+		DrawDebugLine(World, FVector(X, MinY, Z), FVector(X, MaxY, Z), Line, false, -1.0f, 0, Thickness);
+	}
+	for (double Y = MinY; Y <= MaxY + 1.0; Y += Spacing)
+	{
+		DrawDebugLine(World, FVector(MinX, Y, Z), FVector(MaxX, Y, Z), Line, false, -1.0f, 0, Thickness);
+	}
 #endif // ENABLE_DRAW_DEBUG
 }
 
