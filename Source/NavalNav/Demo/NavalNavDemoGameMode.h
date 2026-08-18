@@ -113,6 +113,9 @@ private:
 	/** Draws the sea-grid cost field around the view when naval.DrawGrid is on (no debug actor needed). */
 	void DrawGridOverlay() const;
 
+	/** Draws each zone's rim ring and power number, always on, so recordings are self-explanatory. */
+	void DrawZoneAnnotations() const;
+
 	/** Puts the demo controller's camera on the first ship after a scenario is spawned. */
 	void PossessFirstShip();
 

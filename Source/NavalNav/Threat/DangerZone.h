@@ -82,6 +82,9 @@ public:
 	 */
 	float GetThreatCostAt(const FVector& WorldPoint, float ObserverPowerLevel, float InHostilityThreshold) const;
 
+	/** Colour band for a power level: green / yellow / orange / red. Shared by the disc and the overlay. */
+	static FLinearColor PowerBandColor(float Power);
+
 	/** How far the danger reaches, in world units. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Naval|Threat", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float Radius = 3000.0f;

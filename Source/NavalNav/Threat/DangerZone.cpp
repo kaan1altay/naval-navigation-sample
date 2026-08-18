@@ -53,11 +53,22 @@ ADangerZone::ADangerZone()
 	{
 		ZoneDisc->SetStaticMesh(CylinderMesh.Object);
 	}
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DiscMat(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	// An additive, two-sided emissive material: the disc reads as a coloured glow on the sea rather
+	// than an opaque coin, so ships and routes stay visible through it.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DiscMat(TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
 	if (DiscMat.Succeeded())
 	{
 		DiscBaseMaterial = DiscMat.Object;
 	}
+}
+
+FLinearColor ADangerZone::PowerBandColor(float Power)
+{
+	// Four clear bands so a glance reads the threat level: green, yellow, orange, red.
+	if (Power < 2.0f)  { return FLinearColor(0.20f, 0.90f, 0.35f); }
+	if (Power < 3.0f)  { return FLinearColor(0.95f, 0.85f, 0.20f); }
+	if (Power < 4.5f)  { return FLinearColor(1.00f, 0.50f, 0.10f); }
+	return FLinearColor(1.00f, 0.16f, 0.10f);
 }
 
 void ADangerZone::OnConstruction(const FTransform& Transform)
@@ -92,9 +103,8 @@ void ADangerZone::UpdateZoneVisual()
 
 	if (DiscMaterial)
 	{
-		// Amber for a light threat deepening to blood-red as power rises.
-		const float Strength = FMath::Clamp(PowerLevel / 6.0f, 0.0f, 1.0f);
-		const FLinearColor Color = FMath::Lerp(FLinearColor(1.0f, 0.55f, 0.10f), FLinearColor(1.0f, 0.05f, 0.02f), Strength);
+		// Additive brightness stands in for opacity: ~0.35 reads as a soft, see-through glow.
+		const FLinearColor Color = PowerBandColor(PowerLevel) * 0.35f;
 		DiscMaterial->SetVectorParameterValue(TEXT("Color"), Color);
 	}
 }

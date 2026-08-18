@@ -8,6 +8,7 @@
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Demo/NavalNavDemoPlayerController.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/Engine.h"
 #include "Engine/SkyLight.h"
@@ -79,6 +80,7 @@ void ANavalNavDemoGameMode::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	DrawGridOverlay();
+	DrawZoneAnnotations();
 
 #if !UE_BUILD_SHIPPING
 	if (GEngine && !ScenarioTitle.IsEmpty())
@@ -373,6 +375,33 @@ void ANavalNavDemoGameMode::DrawGridOverlay() const
 	const FSeaGridDebugDrawSettings Settings;
 	FSeaGridDebugDraw::DrawGrid(World, SeaGrid->GetGrid(), ViewLocation, Settings,
 		FSeaGridDebugDraw::IsCostDrawEnabled(), /*Duration=*/0.0f);
+}
+
+void ANavalNavDemoGameMode::DrawZoneAnnotations() const
+{
+#if ENABLE_DRAW_DEBUG
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// A crisp rim and a power number on every zone, always on, so a recording explains itself even
+	// with the debug overlays off. Redrawn each frame (lifetime -1 = one frame) so it stays steady.
+	for (TActorIterator<ADangerZone> It(World); It; ++It)
+	{
+		const ADangerZone* Zone = *It;
+		const FVector Centre = Zone->GetActorLocation();
+		const FColor Band = ADangerZone::PowerBandColor(Zone->GetPowerLevel()).ToFColor(/*bSRGB=*/true);
+
+		DrawDebugCircle(World, Centre + FVector(0, 0, 30), Zone->GetRadius(), /*Segments=*/48, Band,
+			/*bPersistentLines=*/false, /*LifeTime=*/-1.0f, /*DepthPriority=*/0, /*Thickness=*/20.0f,
+			FVector(1, 0, 0), FVector(0, 1, 0), /*bDrawAxis=*/false);
+
+		DrawDebugString(World, Centre + FVector(0, 0, 250), FString::Printf(TEXT("P %.0f"), Zone->GetPowerLevel()),
+			/*TestBaseActor=*/nullptr, Band, /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.4f);
+	}
+#endif // ENABLE_DRAW_DEBUG
 }
 
 void ANavalNavDemoGameMode::OnShipArrived(UNavalNavigatorComponent* Navigator)
