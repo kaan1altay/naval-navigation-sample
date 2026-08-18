@@ -377,7 +377,8 @@ void ANavalNavDemoGameMode::DrawGridOverlay() const
 
 void ANavalNavDemoGameMode::OnShipArrived(UNavalNavigatorComponent* Navigator)
 {
-	if (Navigator)
+	// A ship the player has taken command of keeps its orders — wander must not re-task it.
+	if (Navigator && !Navigator->IsPlayerControlled())
 	{
 		Navigator->RequestMoveTo(RandomSeaPoint());
 	}

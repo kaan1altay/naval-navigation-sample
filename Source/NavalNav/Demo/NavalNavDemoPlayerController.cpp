@@ -150,7 +150,8 @@ void ANavalNavDemoPlayerController::OnClickMove(const FInputActionValue& Value)
 	{
 		if (UNavalNavigatorComponent* Navigator = Ship->FindComponentByClass<UNavalNavigatorComponent>())
 		{
-			Navigator->RequestMoveTo(Target);
+			// A player order takes the ship off auto-wander and always replaces the current goal.
+			Navigator->RequestMoveTo(Target, /*bPlayerOrder=*/true);
 		}
 	}
 }
