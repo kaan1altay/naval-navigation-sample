@@ -96,8 +96,14 @@ private:
 	UFUNCTION()
 	void OnShipArrived(UNavalNavigatorComponent* Navigator);
 
-	/** Spawns a sun, sky and a big sea plane so an empty level is actually visible. */
+	/** Spawns a sun, sky and the sea so an empty level is actually visible. */
 	void SpawnEnvironment();
+
+	/** Spawns one flat sea plane. bGridTexture uses the engine grid material (a motion reference). */
+	void SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour, bool bGridTexture);
+
+	/** Draws a persistent frame around the navigable grid so the playable edge is always visible. */
+	void DrawBoundaryFrame() const;
 
 	/** Destroys every ship and danger zone, ready for a fresh scenario. */
 	void ClearScenarioActors();

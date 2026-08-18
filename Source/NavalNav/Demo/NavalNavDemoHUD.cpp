@@ -121,4 +121,19 @@ void ANavalNavDemoHUD::DrawHUD()
 			DrawBlock(Ship->GetStatusText(), Margin, BelowY, PanelWidth, FLinearColor(0.90f, 0.94f, 1.0f));
 		}
 	}
+
+	// --- Transient message (centred) ----------------------------------------------------------
+	if (!TransientMessage.IsEmpty() && GetWorld() && GetWorld()->GetTimeSeconds() < TransientMessageExpiry)
+	{
+		float TextW = 0.0f;
+		float TextH = 0.0f;
+		Canvas->TextSize(LargeFont, TransientMessage, TextW, TextH, 1.4f, 1.4f);
+		DrawText(TransientMessage, LargeFont, (Canvas->SizeX - TextW) * 0.5f, Canvas->SizeY * 0.28f, FLinearColor(1.0f, 0.55f, 0.35f), 1.4f);
+	}
+}
+
+void ANavalNavDemoHUD::ShowTransientMessage(const FString& Message)
+{
+	TransientMessage = Message;
+	TransientMessageExpiry = GetWorld() ? GetWorld()->GetTimeSeconds() + 2.0f : 0.0f;
 }

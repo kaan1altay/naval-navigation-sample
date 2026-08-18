@@ -21,4 +21,11 @@ public:
 	//~ Begin AHUD interface
 	virtual void DrawHUD() override;
 	//~ End AHUD interface
+
+	/** Shows a short centred message for a couple of seconds (e.g. a rejected click). */
+	void ShowTransientMessage(const FString& Message);
+
+private:
+	FString TransientMessage;
+	float TransientMessageExpiry = 0.0f;
 };

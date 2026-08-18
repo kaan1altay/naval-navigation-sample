@@ -13,6 +13,8 @@
 #include "InputMappingContext.h"
 #include "InputTriggers.h"
 #include "Demo/NavalNavDemoGameMode.h"
+#include "Demo/NavalNavDemoHUD.h"
+#include "Grid/SeaGrid.h"
 #include "NavalNav.h"
 #include "Navigation/NavalNavigatorComponent.h"
 #include "Ship/SailingShipPawn.h"
@@ -179,6 +181,20 @@ void ANavalNavDemoPlayerController::OnClickMove(const FInputActionValue& Value)
 		return;
 	}
 	const FVector Target = WorldOrigin + WorldDirection * T;
+
+	// Reject clicks outside the navigable grid rather than send a ship off into blank sea.
+	if (const USeaGridSubsystem* SeaGrid = GetWorld() ? GetWorld()->GetSubsystem<USeaGridSubsystem>() : nullptr)
+	{
+		const FSeaGridData& Grid = SeaGrid->GetGrid();
+		if (Grid.IsBuilt() && !Grid.IsValidCell(Grid.WorldToCell(Target)))
+		{
+			if (ANavalNavDemoHUD* DemoHUD = Cast<ANavalNavDemoHUD>(GetHUD()))
+			{
+				DemoHUD->ShowTransientMessage(TEXT("Outside navigable area"));
+			}
+			return;
+		}
+	}
 
 	IssueMoveOrder(Target);
 }

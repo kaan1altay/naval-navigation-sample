@@ -83,6 +83,7 @@ void ANavalNavDemoGameMode::Tick(float DeltaSeconds)
 
 	// The scenario title, wind and key map now live on the HUD (ANavalNavDemoHUD); here we only draw
 	// the world-space overlays.
+	DrawBoundaryFrame();
 	DrawGridOverlay();
 	DrawZoneAnnotations();
 }
@@ -123,32 +124,85 @@ void ANavalNavDemoGameMode::SpawnEnvironment()
 		}
 	}
 
-	// A big flat sea plane under everything.
-	const float Extent = FMath::Max(static_cast<float>(GridConfig.Extent.X), static_cast<float>(GridConfig.Extent.Y));
-	const FVector SeaCentre(GridConfig.Center.X, GridConfig.Center.Y, -5.0);
-	if (AStaticMeshActor* Sea = World->SpawnActor<AStaticMeshActor>(SeaCentre, FRotator::ZeroRotator, Params))
-	{
-		Sea->SetMobility(EComponentMobility::Movable);
-		if (UStaticMeshComponent* Mesh = Sea->GetStaticMeshComponent())
-		{
-			if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
-			{
-				Mesh->SetStaticMesh(Plane);
-			}
-			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			// The plane primitive is 100 uu across. Cover several times the grid so the sea's edge is
-			// never in shot even at maximum zoom-out; the sky fills the horizon beyond it anyway.
-			const float PlaneScale = FMath::Max(Extent, FieldRadius) * 10.0f / 100.0f;
-			Sea->SetActorScale3D(FVector(PlaneScale, PlaneScale, 1.0f));
+	// Two sea planes: a huge dark one so the horizon is never a black edge, and a lighter one exactly
+	// over the navigable grid so the playable area is obvious. The inner plane is a hair higher.
+	const float GridWorld = 2.0f * FMath::Max(static_cast<float>(GridConfig.Extent.X), static_cast<float>(GridConfig.Extent.Y));
+	const FVector Centre(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
+	SpawnSeaPlane(Centre + FVector(0, 0, -8), FMath::Max(GridWorld, FieldRadius * 2.0f) * 5.0f, SeaColor * 0.35f, /*bGridTexture=*/false);
+	SpawnSeaPlane(Centre + FVector(0, 0, -4), GridWorld, SeaColor, /*bGridTexture=*/false);
+}
 
-			if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
-			{
-				UMaterialInstanceDynamic* SeaMaterial = UMaterialInstanceDynamic::Create(Base, this);
-				SeaMaterial->SetVectorParameterValue(TEXT("Color"), SeaColor);
-				Mesh->SetMaterial(0, SeaMaterial);
-			}
+void ANavalNavDemoGameMode::SpawnSeaPlane(const FVector& Centre, float WorldSize, const FLinearColor& Colour, bool bGridTexture)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* Sea = World->SpawnActor<AStaticMeshActor>(Centre, FRotator::ZeroRotator, Params);
+	if (!Sea)
+	{
+		return;
+	}
+
+	Sea->SetMobility(EComponentMobility::Movable);
+	UStaticMeshComponent* Mesh = Sea->GetStaticMeshComponent();
+	if (!Mesh)
+	{
+		return;
+	}
+
+	if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
+	{
+		Mesh->SetStaticMesh(Plane);
+	}
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Sea->SetActorScale3D(FVector(WorldSize / 100.0f, WorldSize / 100.0f, 1.0f)); // the plane primitive is 100 uu
+
+	if (bGridTexture)
+	{
+		// The engine grid material tiles with world position — a cheap, clear motion reference that
+		// also marks out the navigable area distinctly from the plain sea beyond it.
+		if (UMaterialInterface* Grid = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial")))
+		{
+			Mesh->SetMaterial(0, Grid);
 		}
 	}
+	else if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	{
+		UMaterialInstanceDynamic* SeaMaterial = UMaterialInstanceDynamic::Create(Base, this);
+		SeaMaterial->SetVectorParameterValue(TEXT("Color"), Colour);
+		SeaMaterial->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
+		Mesh->SetMaterial(0, SeaMaterial);
+	}
+}
+
+void ANavalNavDemoGameMode::DrawBoundaryFrame() const
+{
+#if ENABLE_DRAW_DEBUG
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const double MinX = GridConfig.Center.X - GridConfig.Extent.X;
+	const double MaxX = GridConfig.Center.X + GridConfig.Extent.X;
+	const double MinY = GridConfig.Center.Y - GridConfig.Extent.Y;
+	const double MaxY = GridConfig.Center.Y + GridConfig.Extent.Y;
+	const double Z = 40.0;
+	const FColor Frame(90, 220, 255);
+	const float Thickness = 30.0f;
+
+	const FVector A(MinX, MinY, Z), B(MaxX, MinY, Z), C(MaxX, MaxY, Z), D(MinX, MaxY, Z);
+	DrawDebugLine(World, A, B, Frame, false, -1.0f, 0, Thickness);
+	DrawDebugLine(World, B, C, Frame, false, -1.0f, 0, Thickness);
+	DrawDebugLine(World, C, D, Frame, false, -1.0f, 0, Thickness);
+	DrawDebugLine(World, D, A, Frame, false, -1.0f, 0, Thickness);
+#endif // ENABLE_DRAW_DEBUG
 }
 
 ASailingShipPawn* ANavalNavDemoGameMode::SpawnShip(const FVector& Loc, float Power, const FLinearColor& Color, float HeadingYaw)
