@@ -244,9 +244,10 @@ void ANavalNavDemoGameMode::StartScenario(int32 Index)
 	DemoRandom.Initialize(1000 + CurrentScenario); // deterministic reset per scenario
 
 	const FVector C(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
-	const FLinearColor Gold(1.0f, 0.78f, 0.12f);
-	const FLinearColor Blue(0.55f, 0.68f, 0.85f);
-	const FLinearColor Steel(0.72f, 0.75f, 0.80f);
+	// Saturated, high-contrast against the blue sea: flagship a strong gold-orange, escorts crimson.
+	const FLinearColor Gold(1.0f, 0.55f, 0.04f);
+	const FLinearColor Blue(0.82f, 0.06f, 0.06f);   // named "Blue" historically; now crimson
+	const FLinearColor Steel(0.90f, 0.20f, 0.05f);  // a distinct orange-red for the lone escaper
 
 	switch (CurrentScenario)
 	{
@@ -291,7 +292,7 @@ void ANavalNavDemoGameMode::StartScenario(int32 Index)
 	}
 	case 7:
 	{
-		ScenarioTitle = TEXT("[7] Power contrast - weak (blue) routes around the zone, strong (gold) sails through");
+		ScenarioTitle = TEXT("[7] Power contrast - weak (crimson) routes around the zone, strong (gold) sails through");
 		const FVector Start = C + FVector(-FieldRadius, -1500.0, 0.0);
 		const FVector Goal = C + FVector(FieldRadius, 1500.0, 0.0);
 		SpawnZone(C, 4000.0f, 3.0f); // squarely on the direct line

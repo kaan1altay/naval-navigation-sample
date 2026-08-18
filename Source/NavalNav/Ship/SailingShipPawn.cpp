@@ -46,7 +46,9 @@ ASailingShipPawn::ASailingShipPawn()
 	{
 		HullMesh->SetStaticMesh(ConeMesh.Object);
 		HullMesh->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
-		HullMesh->SetRelativeScale3D(FVector(0.7, 0.7, 2.5));
+		// The cone is 100 uu; this makes the hull ~400 uu long (about two 200 uu grid cells) so it
+		// reads clearly from the demo camera at default zoom.
+		HullMesh->SetRelativeScale3D(FVector(1.3, 1.3, 4.0));
 	}
 
 	// Explicitly base the hull on a lit material that exposes a "Color" vector parameter. The cone's
@@ -110,10 +112,29 @@ void ASailingShipPawn::Tick(float DeltaSeconds)
 
 	StepSailing(DeltaSeconds);
 
-	if (CVarShipDebug.GetValueOnGameThread() != 0)
+	if (bSelected)
+	{
+		DrawSelectionRing();
+	}
+
+	// The ship overlay (heading / rudder / wind arrows) is for the selected ship only, to keep the
+	// screen readable with a whole fleet under way.
+	if (bSelected && CVarShipDebug.GetValueOnGameThread() != 0)
 	{
 		DrawShipDebug();
 	}
+}
+
+void ASailingShipPawn::DrawSelectionRing() const
+{
+#if ENABLE_DRAW_DEBUG
+	if (const UWorld* World = GetWorld())
+	{
+		DrawDebugCircle(World, GetActorLocation() + FVector(0.0, 0.0, 20.0), 520.0f, /*Segments=*/40,
+			FColor(80, 240, 255), /*bPersistentLines=*/false, /*LifeTime=*/-1.0f, /*DepthPriority=*/0,
+			/*Thickness=*/16.0f, FVector(1, 0, 0), FVector(0, 1, 0), /*bDrawAxis=*/false);
+	}
+#endif // ENABLE_DRAW_DEBUG
 }
 
 void ASailingShipPawn::RefreshHullMaterial()
@@ -133,9 +154,10 @@ void ASailingShipPawn::RefreshHullMaterial()
 
 	if (HullMaterial)
 	{
-		// The selected ship reads brighter and warmer so it is easy to pick out of the fleet.
-		const FLinearColor Applied = bSelected ? (HullColor * 1.6f + FLinearColor(0.15f, 0.15f, 0.15f)) : HullColor;
-		HullMaterial->SetVectorParameterValue(TEXT("Color"), Applied);
+		HullMaterial->SetVectorParameterValue(TEXT("Color"), HullColor);
+		// Matte so the strong directional sun does not blow the colour out to white; the selection
+		// is shown by a ring on the water (DrawSelectionRing), not by changing the hull colour.
+		HullMaterial->SetScalarParameterValue(TEXT("Roughness"), 1.0f);
 	}
 }
 

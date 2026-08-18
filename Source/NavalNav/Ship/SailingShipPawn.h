@@ -86,9 +86,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Sailing")
 	void SetHullColor(FLinearColor Color);
 
-	/** Marks this ship the player-selected one, which brightens its hull so it stands out. */
+	/** Marks this ship the player-selected one (draws a ring on the water and enables its overlays). */
 	UFUNCTION(BlueprintCallable, Category = "Sailing")
 	void SetSelected(bool bInSelected);
+
+	/** Whether this is the player-selected ship. Gates the per-ship overlays and the selection ring. */
+	UFUNCTION(BlueprintPure, Category = "Sailing")
+	bool IsSelected() const { return bSelected; }
 
 	/** Nudges the chase-cam boom length, clamped to a sensible range. Used by the demo's mouse-wheel zoom. */
 	UFUNCTION(BlueprintCallable, Category = "Sailing")
@@ -118,8 +122,11 @@ private:
 	/** Reads the wind subsystem (or the fallback), advances the model, writes the transform. */
 	void StepSailing(float DeltaSeconds);
 
-	/** Immediate-mode overlay: heading arrow, wind arrow, rudder line and a text readout. */
+	/** Immediate-mode overlay: heading arrow, wind arrow, rudder line (selected ship only). */
 	void DrawShipDebug() const;
+
+	/** A bright ring on the water marking the selected ship. Always on, not a debug toggle. */
+	void DrawSelectionRing() const;
 
 	/** Root the visuals and camera hang off. The hull never collides, so a scene root is enough. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
@@ -140,11 +147,11 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> HullMaterial;
 
-	/** The ship's assigned colour (before any selection brightening). */
+	/** The ship's assigned hull colour. Default is a saturated crimson that reads on the blue sea. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
-	FLinearColor HullColor = FLinearColor(0.55f, 0.68f, 0.85f);
+	FLinearColor HullColor = FLinearColor(0.80f, 0.06f, 0.06f);
 
-	/** Whether this ship is the player-selected one (brightened). */
+	/** Whether this ship is the player-selected one (draws a ring, enables its overlays). */
 	bool bSelected = false;
 
 	/** Chase-cam boom, so possessing the ship gives a view over the transom without extra setup. */
