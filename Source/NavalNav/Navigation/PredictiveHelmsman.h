@@ -115,6 +115,22 @@ struct NAVALNAV_API FHelmsmanParams
 	/** Extra margin (deg) the true bearing must clear the no-go by before the helmsman stops tacking, to avoid flip-flopping. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Tacking", meta = (ClampMin = "0.0"))
 	float TackHysteresisDeg = 5.0f;
+
+	/**
+	 * Speed ratio below which, if the ship's own heading is inside the no-go cone, the helm is put
+	 * hard over toward the chosen tack — recovering from "in irons" using the model's at-rest yaw
+	 * authority instead of waiting for a PD term that has little speed to work with.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Tacking", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float IronsSpeedRatio = 0.15f;
+
+	/**
+	 * When recovering from irons, bear away this far *past* the no-go edge instead of holding the
+	 * close-hauled edge (which barely makes drive). A fuller point of sail gets the ship moving; once
+	 * it has way on the normal tack heading takes back over and it points up again.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Tacking", meta = (ClampMin = "0.0", ClampMax = "60.0"))
+	float IronsBearAwayDeg = 20.0f;
 };
 
 /** Everything the helmsman needs to know about the world this tick. A plain struct; the caller fills it. */

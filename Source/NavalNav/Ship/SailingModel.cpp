@@ -48,7 +48,9 @@ float FSailingModel::PolarThrustFactor(float AngleOffWindDegrees, const FSailing
 float FSailingModel::SteeringAuthority(float SpeedRatio, const FSailingModelParams& P)
 {
 	const float Ref = FMath::Max(P.SteeringResponseSpeedRatio, 0.01f);
-	return FMath::Clamp(FMath::Max(SpeedRatio, 0.0f) / Ref, 0.0f, 1.0f);
+	const float WithWay = FMath::Clamp(FMath::Max(SpeedRatio, 0.0f) / Ref, 0.0f, 1.0f);
+	// Floor it so a stationary ship keeps a little turning ability and cannot be trapped in irons.
+	return FMath::Max(WithWay, FMath::Clamp(P.MinYawAuthorityAtRest, 0.0f, 1.0f));
 }
 
 float FSailingModel::NormalizeDegrees(float Degrees)

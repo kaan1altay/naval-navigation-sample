@@ -249,12 +249,31 @@ FHelmsmanOutput FPredictiveHelmsman::Update(const FNavalPath& Path, const FHelms
 	}
 	bTacking = bTackingNow;
 
+	// --- Recovering from irons ----------------------------------------------------------------
+	// A ship that wants to go upwind but has barely any way on is (or is about to be) in irons. The
+	// close-hauled tack edge makes almost no drive, so from a standstill hold a fuller point of sail
+	// (bear away past the no-go) until the ship has way on; the normal tack heading then resumes and
+	// it points back up. While the bow is still physically inside the cone, put the helm hard over so
+	// it rotates out under the model's at-rest yaw authority instead of waiting on a weak PD term.
+	const float HeadingOffWind = FSailingModel::AngleOffWind(Input.ShipHeadingDeg, Input.WindFromDeg);
+	const float SpeedRatioNow = Input.ShipSpeed / FMath::Max(Sail.MaxSpeed, 1.0f);
+	const bool bLowSpeed = SpeedRatioNow < Params.IronsSpeedRatio;
+	if (bLowSpeed && bTacking)
+	{
+		DesiredHeading = FSailingModel::NormalizeDegrees(Input.WindFromDeg + TackSign * (NoGo + Params.IronsBearAwayDeg));
+	}
+
 	// --- Rudder: PD on bearing error, damped by the measured yaw rate -------------------------
 	const float BearingError = FSailingModel::NormalizeDegrees(DesiredHeading - Input.ShipHeadingDeg);
 	const float ProportionalError = FMath::Abs(BearingError) < Params.BearingDeadbandDeg ? 0.0f : BearingError;
-	const float Rudder = FMath::Clamp(
+	float Rudder = FMath::Clamp(
 		Params.SteerP * ProportionalError - Params.SteerD * Input.ShipYawRateDeg,
 		-1.0f, 1.0f);
+
+	if (bLowSpeed && HeadingOffWind < NoGo && FMath::Abs(BearingError) > UE_KINDA_SMALL_NUMBER)
+	{
+		Rudder = BearingError >= 0.0f ? 1.0f : -1.0f;
+	}
 
 	// --- Trim: full, eased for arrival and for hard turns -------------------------------------
 	float Trim = 1.0f;

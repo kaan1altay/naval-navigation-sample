@@ -49,11 +49,20 @@ struct NAVALNAV_API FSailingModelParams
 
 	/**
 	 * Speed ratio (speed / MaxSpeed) at which the rudder reaches full authority. Below it the
-	 * rudder bites proportionally less, and at rest not at all: a ship cannot turn without way on,
-	 * which is precisely the constraint that makes the Slice 3 follower non-trivial.
+	 * rudder bites proportionally less, which is the constraint that makes the Slice 3 follower
+	 * non-trivial (a ship must have way on to corner hard).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing|Steering", meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float SteeringResponseSpeedRatio = 0.5f;
+
+	/**
+	 * Fraction of MaxTurnRate a *stationary* ship can still turn at. Zero would let a ship stall
+	 * head-to-wind with no way to steer out of the no-go cone ("in irons") forever. A small floor
+	 * (~0.2) lets it slowly rotate out; think of it as the game-friendly stand-in for backing the
+	 * sails, poling, or drifting the bow round. It never gives drive — only the ability to turn.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing|Steering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinYawAuthorityAtRest = 0.2f;
 
 	//~ Polar curve -----------------------------------------------------------------------------
 

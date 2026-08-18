@@ -145,12 +145,14 @@ bool FNavalNavRudderTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Positive rudder swings the head positive"), Port.HeadingDegrees > Before + 1.0f);
 	TestTrue(TEXT("Negative rudder swings the head negative"), Starboard.HeadingDegrees < Before - 1.0f);
 
-	// A ship dead in the water cannot turn: no way on, no steerage.
+	// A ship dead in the water still answers the helm slowly, thanks to the small at-rest yaw
+	// authority that keeps it from being trapped head-to-wind — but far slower than with way on.
 	FSailingState Adrift;
 	Adrift.HeadingDegrees = 30.0f;
 	Adrift.Speed = 0.0f;
 	const FSailingState Tried = NavalNavShipTest::SailFor(Model, Adrift, 1.0f, 0.0f, WindFromYaw, 0.0f, 2.0f);
-	TestEqual(TEXT("With no way on and no wind the head does not move"), Tried.HeadingDegrees, 30.0f, 0.5f);
+	TestTrue(TEXT("At rest the head still slowly answers positive rudder"), Tried.HeadingDegrees > 30.5f);
+	TestTrue(TEXT("but turns far slower than a ship with way on"), Tried.HeadingDegrees < 50.0f);
 
 	return true;
 }
@@ -163,9 +165,11 @@ bool FNavalNavTurnHelpersTest::RunTest(const FString& Parameters)
 {
 	const FSailingModel Model = NavalNavShipTest::MakeModel();
 
-	// A stationary ship has an unbounded turn radius and cannot promise to complete a turn.
-	TestTrue(TEXT("Turn radius is effectively infinite at rest"), Model.PredictTurnRadius(0.0f) > 1.0e9f);
-	TestTrue(TEXT("Time to turn is effectively infinite at rest"), Model.EstimateTimeToTurn(90.0f, 0.0f) > 1.0e9f);
+	// A stationary ship now has a small base yaw authority, so it turns in place: the radius
+	// collapses toward zero and the time-to-turn is finite but slow.
+	TestEqual(TEXT("Turn radius collapses toward zero at rest (turning in place)"), Model.PredictTurnRadius(0.0f), 0.0f, 1.0f);
+	const float RestTurn = Model.EstimateTimeToTurn(90.0f, 0.0f);
+	TestTrue(TEXT("Time to turn at rest is finite but slow"), RestTurn > 5.0f && RestTurn < 60.0f);
 
 	// With way on the radius is finite and positive.
 	const float Radius = Model.PredictTurnRadius(Model.Params.MaxSpeed);

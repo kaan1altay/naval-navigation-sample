@@ -366,4 +366,125 @@ bool FNavalNavHelmsmanFreshOrderTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+//---------------------------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNavalNavHelmsmanIronsTest, "NavalNav.Helmsman.RecoversFromInIrons",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNavalNavHelmsmanIronsTest::RunTest(const FString& Parameters)
+{
+	FSailingModel Model;
+	Model.Params.bEnableLeeway = false;
+	FPredictiveHelmsman Helmsman;
+
+	const float WindFromDeg = 0.0f;              // wind out of bearing 0
+	const float NoGo = Model.Params.NoGoAngleDegrees;
+
+	// Dead in the water, bow pointed straight into the wind's eye, with an upwind goal — the classic
+	// "in irons" deadlock.
+	FSailingState State;
+	State.HeadingDegrees = 0.0f;
+	State.Speed = 0.0f;
+	State.SailTrim = 1.0f;
+	FVector Position(0, 0, 0);
+	const FNavalPath Path = NavalNavHelmsmanTest::MakePath({ Position, FVector(8000, 0, 0) });
+
+	float LastHeading = State.HeadingDegrees;
+	float MinDesiredOffWind = 180.0f;
+	const float Dt = 0.05f;
+	bool bRecovered = false;
+
+	for (int32 Tick = 0; Tick < 600 && !bRecovered; ++Tick)
+	{
+		FHelmsmanInput In;
+		In.ShipLocation = Position;
+		In.ShipHeadingDeg = State.HeadingDegrees;
+		In.ShipSpeed = State.Speed;
+		In.ShipYawRateDeg = FSailingModel::NormalizeDegrees(State.HeadingDegrees - LastHeading) / Dt;
+		In.WindFromDeg = WindFromDeg;
+		In.WindStrength = 1.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, In, Model.Params, Dt);
+		LastHeading = State.HeadingDegrees;
+		MinDesiredOffWind = FMath::Min(MinDesiredOffWind, FSailingModel::AngleOffWind(Out.DesiredHeadingDeg, WindFromDeg));
+
+		Model.Advance(State, Out.RudderInput, Out.SailTrim, WindFromDeg, 1.0f, Dt);
+		const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
+		Position += FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
+
+		if (FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromDeg) >= NoGo && State.Speed > 30.0f)
+		{
+			bRecovered = true;
+		}
+	}
+
+	TestTrue(TEXT("A ship in irons rotates out of the no-go cone and makes way within 30 s"), bRecovered);
+	TestTrue(TEXT("The helmsman never commanded a heading inside the no-go cone"), MinDesiredOffWind >= NoGo - 1.0f);
+
+	return true;
+}
+
+//---------------------------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNavalNavHelmsmanSoakTest, "NavalNav.Helmsman.NoPermanentStallUnderRandomGoalsAndWind",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNavalNavHelmsmanSoakTest::RunTest(const FString& Parameters)
+{
+	FSailingModel Model;
+	Model.Params.bEnableLeeway = false;
+	FPredictiveHelmsman Helmsman;
+
+	FRandomStream Rng(0x1305);
+	FSailingState State;
+	State.HeadingDegrees = Rng.FRandRange(-180.0f, 180.0f);
+	FVector Position(0, 0, 0);
+	float WindFromDeg = Rng.FRandRange(-180.0f, 180.0f);
+
+	FNavalPath Path = NavalNavHelmsmanTest::MakePath({ Position, FVector(Rng.FRandRange(-8000.f, 8000.f), Rng.FRandRange(-8000.f, 8000.f), 0) });
+
+	const float Dt = 0.05f;
+	float LastHeading = State.HeadingDegrees;
+	int32 StallTicks = 0;
+	int32 MaxStallTicks = 0;
+	bool bFinite = true;
+
+	for (int32 Tick = 0; Tick < 10000; ++Tick)
+	{
+		// Re-task and shift the wind now and then, always giving a fresh reachable goal.
+		if (Tick % 200 == 0)
+		{
+			Path = NavalNavHelmsmanTest::MakePath({ Position, Position + FVector(Rng.FRandRange(-8000.f, 8000.f), Rng.FRandRange(-8000.f, 8000.f), 0) });
+			Helmsman.Reset();
+		}
+		if (Tick % 120 == 0)
+		{
+			WindFromDeg = FSailingModel::NormalizeDegrees(WindFromDeg + Rng.FRandRange(-60.0f, 60.0f));
+		}
+
+		FHelmsmanInput In;
+		In.ShipLocation = Position;
+		In.ShipHeadingDeg = State.HeadingDegrees;
+		In.ShipSpeed = State.Speed;
+		In.ShipYawRateDeg = FSailingModel::NormalizeDegrees(State.HeadingDegrees - LastHeading) / Dt;
+		In.WindFromDeg = WindFromDeg;
+		In.WindStrength = 1.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, In, Model.Params, Dt);
+		LastHeading = State.HeadingDegrees;
+		Model.Advance(State, Out.RudderInput, Out.SailTrim, WindFromDeg, 1.0f, Dt);
+		const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
+		Position += FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
+
+		bFinite &= FMath::IsFinite(State.Speed) && FMath::IsFinite(State.HeadingDegrees) && FMath::IsFinite(Position.X);
+
+		StallTicks = (State.Speed < 15.0f) ? (StallTicks + 1) : 0;
+		MaxStallTicks = FMath::Max(MaxStallTicks, StallTicks);
+	}
+
+	TestTrue(TEXT("The soak stayed finite"), bFinite);
+	// 30 s (600 ticks): a ship may crawl briefly recovering from irons, but never stalls forever.
+	TestTrue(TEXT("No ship is ever stalled for longer than 30 s while under way orders"), MaxStallTicks < 600);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
