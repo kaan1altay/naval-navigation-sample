@@ -72,13 +72,13 @@ struct NAVALNAV_API FHelmsmanParams
 	float SlowdownRadius = 4000.0f;
 
 	/**
-	 * A ship cannot reach a point inside its own turning circle by turning toward it — it orbits.
-	 * So the final waypoint also counts as reached once the ship is within this factor of its
-	 * turning radius of the goal AND the goal is off the bow (not straight ahead). This is what
-	 * stops the "circle the goal forever" behaviour on a tight approach.
+	 * A ship cannot reach a point inside its own turning circle by turning toward it — it just
+	 * orbits. So rather than instantly "arriving" near any close goal (which would ignore a player
+	 * clicking beside the ship), the helmsman lets it try, and only gives up once it has turned
+	 * this many degrees near the goal without reaching it — i.e. it is demonstrably circling.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Arrival", meta = (ClampMin = "0.0"))
-	float ArrivalTurnRadiusFactor = 1.2f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Arrival", meta = (ClampMin = "90.0"))
+	float OrbitGiveUpTurnDeg = 400.0f;
 
 	/** A final waypoint that has fallen behind the ship counts as reached within this multiple of ArrivalRadius. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Arrival", meta = (ClampMin = "1.0"))
@@ -234,4 +234,11 @@ private:
 
 	/** Persistent: which side of the wind the current tack is on (+1 or -1). */
 	int32 TackSign = 0;
+
+	/** Persistent: heading last tick, to accumulate turning while near the goal (orbit detection). */
+	float PrevHeadingDeg = 0.0f;
+	bool bHasPrevHeading = false;
+
+	/** Persistent: total turning (deg) done while within the slowdown radius of the goal. */
+	float ApproachTurnDeg = 0.0f;
 };

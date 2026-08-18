@@ -39,6 +39,10 @@ public:
 	 *  after it has spawned the fleet, since the controller's own BeginPlay may run first. */
 	void PossessFirstAvailableShip() { PossessShipAtIndex(0); }
 
+	/** Console command to exercise the click->order path headlessly: `NavalDemoOrder 5000 5000`. */
+	UFUNCTION(Exec)
+	void NavalDemoOrder(float X, float Y);
+
 private:
 	void EnsureInputAssets();
 
@@ -64,6 +68,9 @@ private:
 
 	/** Rebuilds the ship list and possesses the ship at Index (for its chase cam). */
 	void PossessShipAtIndex(int32 Index);
+
+	/** Resolves the possessed ship and issues a player move order to its navigator. */
+	void IssueMoveOrder(const FVector& Target);
 
 	/** Flips a 0/1 console variable and logs the new state. */
 	static void ToggleCVar(const TCHAR* Name, const TCHAR* Label);

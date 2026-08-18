@@ -309,4 +309,61 @@ bool FNavalNavHelmsmanNoOrbitTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+//---------------------------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNavalNavHelmsmanFreshOrderTest, "NavalNav.Helmsman.FreshOrderNearbyManoeuvres",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNavalNavHelmsmanFreshOrderTest::RunTest(const FString& Parameters)
+{
+	// Regression: a player clicking a point abeam of (and close to) a moving ship must make it
+	// manoeuvre there, not silently "arrive". This is the click-does-nothing bug from polish 1.
+	FSailingModel Model;
+	Model.Params.bEnableLeeway = false;
+	FPredictiveHelmsman Helmsman;
+
+	FSailingState State;
+	State.HeadingDegrees = 0.0f;
+	State.Speed = 700.0f;
+	State.SailTrim = 1.0f;
+
+	const float TurnRadius = Model.PredictTurnRadius(State.Speed);
+	const FVector Goal(0.0, 0.9 * TurnRadius, 0.0); // abeam, inside the turning circle
+	const FNavalPath Path = NavalNavHelmsmanTest::MakePath({ FVector(0, 0, 0), Goal });
+
+	FHelmsmanInput In;
+	In.ShipLocation = FVector(0, 0, 0);
+	In.ShipHeadingDeg = 0.0f;
+	In.ShipSpeed = State.Speed;
+	In.WindFromDeg = -90.0f;
+	In.WindStrength = 1.0f;
+
+	const FHelmsmanOutput First = Helmsman.Update(Path, In, Model.Params, 0.05f);
+	TestFalse(TEXT("A fresh order to a nearby point does not instantly count as arrived"), First.bArrived);
+	TestTrue(TEXT("The helm is put over toward the ordered point"), FMath::Abs(First.RudderInput) > 0.05f);
+
+	// Over the next second it should actually make way, not sit still.
+	FVector Position(0, 0, 0);
+	float LastHeading = State.HeadingDegrees;
+	const float Dt = 0.05f;
+	for (int32 Tick = 0; Tick < 20; ++Tick)
+	{
+		FHelmsmanInput Loop;
+		Loop.ShipLocation = Position;
+		Loop.ShipHeadingDeg = State.HeadingDegrees;
+		Loop.ShipSpeed = State.Speed;
+		Loop.ShipYawRateDeg = FSailingModel::NormalizeDegrees(State.HeadingDegrees - LastHeading) / Dt;
+		Loop.WindFromDeg = -90.0f;
+		Loop.WindStrength = 1.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, Loop, Model.Params, Dt);
+		LastHeading = State.HeadingDegrees;
+		Model.Advance(State, Out.RudderInput, Out.SailTrim, -90.0f, 1.0f, Dt);
+		const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
+		Position += FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
+	}
+	TestTrue(TEXT("The ship makes real way toward the order"), Position.Size2D() > 500.0f);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

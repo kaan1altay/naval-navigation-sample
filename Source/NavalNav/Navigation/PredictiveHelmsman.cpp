@@ -19,6 +19,8 @@ void FPredictiveHelmsman::Reset()
 	ActiveWaypoint = 1;
 	bTacking = false;
 	TackSign = 0;
+	bHasPrevHeading = false;
+	ApproachTurnDeg = 0.0f;
 }
 
 float FPredictiveHelmsman::BearingDegrees(const FVector& From, const FVector& To)
@@ -95,30 +97,26 @@ FHelmsmanOutput FPredictiveHelmsman::Update(const FNavalPath& Path, const FHelms
 	const FVector& Goal = W[Num - 1];
 	const float GoalDist = static_cast<float>(FVector::Dist2D(Ship, Goal));
 
-	// The heading and turning circle are needed both for arrival and, later, for steering.
+	// The heading is needed both for arrival and, later, for steering.
 	const float HeadingRad = FMath::DegreesToRadians(Input.ShipHeadingDeg);
 	const FVector Forward(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0);
 
-	FSailingModel Model;
-	Model.Params = Sail;
-	const float TurnRadius = Model.PredictTurnRadius(Input.ShipSpeed);
+	// Orbit detection: accumulate how much the ship has turned while near the goal. A ship that has
+	// come most of the way round without arriving is circling a point inside its own turning circle
+	// and never will — so it gives up. Crucially this does NOT fire on a fresh order (the ship gets
+	// to try first), which is what a player clicking beside the ship expects.
+	if (bHasPrevHeading)
+	{
+		const float TurnedThisTick = FMath::Abs(FSailingModel::NormalizeDegrees(Input.ShipHeadingDeg - PrevHeadingDeg));
+		ApproachTurnDeg = (GoalDist < Params.SlowdownRadius) ? (ApproachTurnDeg + TurnedThisTick) : 0.0f;
+	}
+	PrevHeadingDeg = Input.ShipHeadingDeg;
+	bHasPrevHeading = true;
 
 	// --- Arrival short-circuits everything ---------------------------------------------------
-	// Three ways to count as arrived, so a tight or overshooting approach can never orbit forever:
-	//  1. plainly inside the accept radius;
-	//  2. within a turning-circle of the goal while the goal is off the bow — the ship physically
-	//     cannot get closer by turning, so circling it would be pointless;
-	//  3. the goal has slipped behind the ship, close enough that coming about is not worth it.
+	// Reached if plainly inside the accept radius, if the goal has slipped just behind the ship, or
+	// if the ship has demonstrably orbited a goal it cannot physically reach.
 	bool bArrived = GoalDist < Params.ArrivalRadius;
-	if (!bArrived && TurnRadius < 1.0e9f)
-	{
-		const float BearingToGoalErr = FMath::Abs(FSailingModel::NormalizeDegrees(BearingDegrees(Ship, Goal) - Input.ShipHeadingDeg));
-		const bool bGoalOffBow = BearingToGoalErr > 60.0f;
-		if (bGoalOffBow && GoalDist < TurnRadius * Params.ArrivalTurnRadiusFactor)
-		{
-			bArrived = true;
-		}
-	}
 	if (!bArrived)
 	{
 		const bool bGoalBehind = Dot2D(Forward, Goal - Ship) < 0.0;
@@ -126,6 +124,10 @@ FHelmsmanOutput FPredictiveHelmsman::Update(const FNavalPath& Path, const FHelms
 		{
 			bArrived = true;
 		}
+	}
+	if (!bArrived && ApproachTurnDeg >= Params.OrbitGiveUpTurnDeg)
+	{
+		bArrived = true;
 	}
 
 	if (bArrived)

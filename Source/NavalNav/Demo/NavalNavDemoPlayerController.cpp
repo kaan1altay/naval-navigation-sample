@@ -145,7 +145,14 @@ void ANavalNavDemoPlayerController::PossessShipAtIndex(int32 Index)
 	if (ASailingShipPawn* Ship = Ships[CurrentShipIndex])
 	{
 		Possess(Ship);
+		UE_LOG(LogNavalNav, Log, TEXT("Possessed ship %d/%d: %s (GetPawn=%s)"), CurrentShipIndex, Ships.Num(),
+			*Ship->GetName(), *GetNameSafe(GetPawn()));
 	}
+}
+
+void ANavalNavDemoPlayerController::NavalDemoOrder(float X, float Y)
+{
+	IssueMoveOrder(FVector(X, Y, SeaLevelZ));
 }
 
 void ANavalNavDemoPlayerController::OnClickMove(const FInputActionValue& Value)
@@ -154,6 +161,7 @@ void ANavalNavDemoPlayerController::OnClickMove(const FInputActionValue& Value)
 	FVector WorldDirection;
 	if (!DeprojectMousePositionToWorld(WorldOrigin, WorldDirection))
 	{
+		UE_LOG(LogNavalNav, Warning, TEXT("Click: deproject failed (no cursor position)"));
 		return;
 	}
 
@@ -169,14 +177,28 @@ void ANavalNavDemoPlayerController::OnClickMove(const FInputActionValue& Value)
 	}
 	const FVector Target = WorldOrigin + WorldDirection * T;
 
-	if (ASailingShipPawn* Ship = Cast<ASailingShipPawn>(GetPawn()))
+	IssueMoveOrder(Target);
+}
+
+void ANavalNavDemoPlayerController::IssueMoveOrder(const FVector& Target)
+{
+	ASailingShipPawn* Ship = Cast<ASailingShipPawn>(GetPawn());
+	if (!Ship)
 	{
-		if (UNavalNavigatorComponent* Navigator = Ship->FindComponentByClass<UNavalNavigatorComponent>())
-		{
-			// A player order takes the ship off auto-wander and always replaces the current goal.
-			Navigator->RequestMoveTo(Target, /*bPlayerOrder=*/true);
-		}
+		UE_LOG(LogNavalNav, Warning, TEXT("Click -> order: no possessed ship (GetPawn null)"));
+		return;
 	}
+
+	UNavalNavigatorComponent* Navigator = Ship->FindComponentByClass<UNavalNavigatorComponent>();
+	if (!Navigator)
+	{
+		UE_LOG(LogNavalNav, Warning, TEXT("Click -> order: %s has no navigator"), *Ship->GetName());
+		return;
+	}
+
+	// A player order takes the ship off auto-wander and always replaces the current goal.
+	Navigator->RequestMoveTo(Target, /*bPlayerOrder=*/true);
+	UE_LOG(LogNavalNav, Log, TEXT("Click -> order: %s to %s"), *Ship->GetName(), *Target.ToString());
 }
 
 void ANavalNavDemoPlayerController::OnCycleShip(const FInputActionValue& Value)
