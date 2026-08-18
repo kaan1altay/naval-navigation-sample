@@ -147,6 +147,10 @@ private:
 	/** Plans to CurrentGoal and adopts the result only if the policy says it is worth it. */
 	void ConsiderReplan(EReplanReason Reason);
 
+	/** Cost of an existing path re-evaluated for this ship's *current* power, so a route that has
+	 *  become dangerous (e.g. after a power drop) compares fairly against a fresh plan. */
+	float RecostPath(const FNavalPath& Path) const;
+
 	/** Breaks off toward safety and remembers the goal to resume. */
 	void EnterEscape();
 

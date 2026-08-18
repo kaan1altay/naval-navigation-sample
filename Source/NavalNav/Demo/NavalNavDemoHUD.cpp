@@ -6,6 +6,9 @@
 #include "Demo/NavalNavDemoGameMode.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "GameFramework/PlayerController.h"
+#include "Ship/SailingShipPawn.h"
+#include "Ship/ShipPowerComponent.h"
 #include "Ship/WindSubsystem.h"
 
 void ANavalNavDemoHUD::DrawHUD()
@@ -34,12 +37,24 @@ void ANavalNavDemoHUD::DrawHUD()
 		WindStrength = Wind->GetWindStrength();
 	}
 	const FString WindLine = FString::Printf(TEXT("Wind  %.0f deg toward   |   strength %.0f%%"), WindTowardYaw, WindStrength * 100.0f);
-	const FString KeyMap = TEXT("L-click move   Tab cycle ship   1 nav / 2 ship / 3 grid   5-9 scenarios   P weaken   arrows: wind   wheel: zoom");
+
+	// The selected (possessed) ship's power, so P/O have visible feedback.
+	FString ShipLine = TEXT("Selected ship: (none)");
+	if (PlayerOwner)
+	{
+		if (const ASailingShipPawn* Ship = Cast<ASailingShipPawn>(PlayerOwner->GetPawn()))
+		{
+			const float Power = Ship->GetPowerComponent() ? Ship->GetPowerComponent()->GetPowerLevel() : 0.0f;
+			ShipLine = FString::Printf(TEXT("Selected ship: %s   |   power %.1f   (O stronger / P weaker)"), *Ship->GetName(), Power);
+		}
+	}
+
+	const FString KeyMap = TEXT("L-click move   Tab cycle ship   1 nav / 2 ship / 3 grid   5-9 scenarios   O/P power   arrows: wind   wheel: zoom");
 
 	// --- Backing box + text -------------------------------------------------------------------
 	const float Margin = 24.0f;
 	const float BoxWidth = FMath::Min(Canvas->SizeX - 2.0f * Margin, 1200.0f);
-	const float BoxHeight = 128.0f;
+	const float BoxHeight = 158.0f;
 
 	FCanvasTileItem Box(FVector2D(Margin, Margin), FVector2D(BoxWidth, BoxHeight), FLinearColor(0.0f, 0.0f, 0.0f, 0.55f));
 	Box.BlendMode = SE_BLEND_Translucent;
@@ -54,8 +69,9 @@ void ANavalNavDemoHUD::DrawHUD()
 	};
 
 	DrawText(Title, LargeFont, Margin + 16.0f, Margin + 12.0f, FLinearColor::White, 1.3f);
-	DrawText(WindLine, MediumFont, Margin + 16.0f, Margin + 54.0f, FLinearColor(0.70f, 0.86f, 1.0f), 1.1f);
-	DrawText(KeyMap, MediumFont, Margin + 16.0f, Margin + 86.0f, FLinearColor(0.78f, 0.82f, 0.88f), 1.0f);
+	DrawText(WindLine, MediumFont, Margin + 16.0f, Margin + 52.0f, FLinearColor(0.70f, 0.86f, 1.0f), 1.1f);
+	DrawText(ShipLine, MediumFont, Margin + 16.0f, Margin + 82.0f, FLinearColor(1.0f, 0.92f, 0.6f), 1.1f);
+	DrawText(KeyMap, MediumFont, Margin + 16.0f, Margin + 116.0f, FLinearColor(0.78f, 0.82f, 0.88f), 1.0f);
 
 	// --- Wind compass, top-right: an arrow pointing where the wind blows TO --------------------
 	const FVector2D Centre(Canvas->SizeX - 110.0f, 110.0f);

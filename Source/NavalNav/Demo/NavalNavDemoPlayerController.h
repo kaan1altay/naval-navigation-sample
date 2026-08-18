@@ -58,6 +58,7 @@ private:
 	void OnScenario8(const FInputActionValue& Value);
 	void OnScenario9(const FInputActionValue& Value);
 	void OnWeakenShip(const FInputActionValue& Value);
+	void OnStrengthenShip(const FInputActionValue& Value);
 	void OnWindLeft(const FInputActionValue& Value);
 	void OnWindRight(const FInputActionValue& Value);
 	void OnWindStronger(const FInputActionValue& Value);
@@ -71,6 +72,9 @@ private:
 
 	/** Resolves the possessed ship and issues a player move order to its navigator. */
 	void IssueMoveOrder(const FVector& Target);
+
+	/** Changes the selected ship's power by Delta (clamped), which broadcasts OnPowerChanged. */
+	void AdjustSelectedShipPower(float Delta);
 
 	/** Flips a 0/1 console variable and logs the new state. */
 	static void ToggleCVar(const TCHAR* Name, const TCHAR* Label);
@@ -98,6 +102,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> WeakenAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> StrengthenAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> WindLeftAction;

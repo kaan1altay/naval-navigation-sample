@@ -208,8 +208,10 @@ void UNavalNavigatorComponent::ConsiderReplan(EReplanReason Reason)
 
 	// Off-route and blocked mean the old path can no longer be trusted, so any valid replacement is
 	// an improvement; otherwise only switch for a meaningfully cheaper route, to avoid dithering.
+	// Crucially the old path is re-costed for the ship's *current* power: after a power drop the route
+	// it is on may now cross hostile water, which must make it look expensive so the safe replan wins.
 	const bool bOldInvalid = (Reason == EReplanReason::PathBlocked || Reason == EReplanReason::OffRoute || !CurrentPath.bSuccess);
-	if (ReplanPolicy.ShouldAdoptNewPath(CurrentPath.GetTotalCost(), Candidate.GetTotalCost(), bOldInvalid))
+	if (ReplanPolicy.ShouldAdoptNewPath(RecostPath(CurrentPath), Candidate.GetTotalCost(), bOldInvalid))
 	{
 		// The candidate starts at the ship's current position, so the helmsman's fresh waypoint 1 is
 		// already ahead of the bow: the splice keeps heading continuity, no reset-to-start jerk.
@@ -222,6 +224,40 @@ void UNavalNavigatorComponent::ConsiderReplan(EReplanReason Reason)
 		++ReplanCount;
 		LastReplanReason = Reason;
 	}
+}
+
+float UNavalNavigatorComponent::RecostPath(const FNavalPath& Path) const
+{
+	if (!Path.bSuccess || Path.Num() < 2)
+	{
+		return 0.0f;
+	}
+
+	USeaGridSubsystem* SeaGrid = GetSeaGrid();
+	if (!SeaGrid || !SeaGrid->GetGrid().IsBuilt())
+	{
+		return Path.GetTotalCost();
+	}
+
+	// Walk the path sampling this ship's observer cost per cell, so the total is on the same scale
+	// as the A* cost (sum of cell cost x cells traversed). A leg through a lethal core reads as huge.
+	const float Power = GetShipPower();
+	const float CellSize = FMath::Max(SeaGrid->GetGrid().GetCellSize(), 1.0f);
+	float Total = 0.0f;
+	for (int32 Index = 1; Index < Path.Num(); ++Index)
+	{
+		const FVector& A = Path.Waypoints[Index - 1];
+		const FVector& B = Path.Waypoints[Index];
+		const float Length = static_cast<float>(FVector::Dist2D(A, B));
+		const int32 Steps = FMath::Max(1, FMath::CeilToInt32(Length / CellSize));
+		const float CellsPerStep = (Length / Steps) / CellSize;
+		for (int32 Step = 1; Step <= Steps; ++Step)
+		{
+			const FVector Point = A + (B - A) * (static_cast<double>(Step) / Steps);
+			Total += SeaGrid->GetObserverCellCost(Point, Power, HostilityThreshold) * CellsPerStep;
+		}
+	}
+	return Total;
 }
 
 void UNavalNavigatorComponent::EnterEscape()
@@ -433,10 +469,20 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 		FColor(60, 230, 120), false, -1.0f, 0, 4.0f);
 	DrawDebugSphere(World, LastOutput.TurnInPoint + Lift, 180.0f, 12, FColor(255, 140, 40), false, -1.0f);
 
+	// This ship's power and whether it is currently sitting in water hostile to it.
+	const float ShipPower = GetShipPower();
+	float SelfCost = NavalNav::OpenWaterCost;
+	if (USeaGridSubsystem* SeaGrid = GetSeaGrid())
+	{
+		SelfCost = SeaGrid->GetObserverCellCost(Ship->GetActorLocation(), ShipPower, HostilityThreshold);
+	}
+	const bool bHostile = SelfCost > NavalNav::OpenWaterCost + 0.01f;
+
 	const FString Readout = FString::Printf(
-		TEXT("Navigator: %s%s  | validations %d / replans %d (%s)\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
+		TEXT("Navigator: %s%s  | validations %d / replans %d (%s)\npower %.1f | hostile: %s\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
 		StateName(State), bPlayerControlled ? TEXT(" [player]") : TEXT(""),
 		ReplanPolicy.GetValidationCount(), ReplanCount, ReasonName(LastReplanReason),
+		ShipPower, bHostile ? TEXT("YES") : TEXT("no"),
 		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
 		LastOutput.BearingErrorDeg, LastOutput.RudderInput, LastOutput.SailTrim,
 		LastOutput.bTacking ? TEXT(" | TACKING") : TEXT(""));

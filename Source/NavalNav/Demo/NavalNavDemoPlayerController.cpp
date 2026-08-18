@@ -40,6 +40,7 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	GridDebugAction = MakeAction(TEXT("DemoGridDebugAction"), EInputActionValueType::Boolean);
 	ZoomAction = MakeAction(TEXT("DemoZoomAction"), EInputActionValueType::Axis1D);
 	WeakenAction = MakeAction(TEXT("DemoWeakenAction"), EInputActionValueType::Boolean);
+	StrengthenAction = MakeAction(TEXT("DemoStrengthenAction"), EInputActionValueType::Boolean);
 	WindLeftAction = MakeAction(TEXT("DemoWindLeftAction"), EInputActionValueType::Boolean);
 	WindRightAction = MakeAction(TEXT("DemoWindRightAction"), EInputActionValueType::Boolean);
 	WindStrongerAction = MakeAction(TEXT("DemoWindStrongerAction"), EInputActionValueType::Boolean);
@@ -57,6 +58,7 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	MappingContext->MapKey(GridDebugAction, EKeys::Three);
 	MappingContext->MapKey(ZoomAction, EKeys::MouseWheelAxis);
 	MappingContext->MapKey(WeakenAction, EKeys::P);
+	MappingContext->MapKey(StrengthenAction, EKeys::O);
 	MappingContext->MapKey(WindLeftAction, EKeys::Left);
 	MappingContext->MapKey(WindRightAction, EKeys::Right);
 	MappingContext->MapKey(WindStrongerAction, EKeys::Up);
@@ -102,6 +104,7 @@ void ANavalNavDemoPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(GridDebugAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnToggleGridDebug);
 		EnhancedInput->BindAction(ZoomAction, ETriggerEvent::Triggered, this, &ANavalNavDemoPlayerController::OnZoom);
 		EnhancedInput->BindAction(WeakenAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnWeakenShip);
+		EnhancedInput->BindAction(StrengthenAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnStrengthenShip);
 		EnhancedInput->BindAction(ScenarioActions[0], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario5);
 		EnhancedInput->BindAction(ScenarioActions[1], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario6);
 		EnhancedInput->BindAction(ScenarioActions[2], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario7);
@@ -278,15 +281,28 @@ void ANavalNavDemoPlayerController::OnWindWeaker(const FInputActionValue& Value)
 
 void ANavalNavDemoPlayerController::OnWeakenShip(const FInputActionValue& Value)
 {
-	// Scenario 9's payoff: knock the selected ship's power down and let the navigator react.
-	if (ASailingShipPawn* Ship = Cast<ASailingShipPawn>(GetPawn()))
+	AdjustSelectedShipPower(-1.0f);
+}
+
+void ANavalNavDemoPlayerController::OnStrengthenShip(const FInputActionValue& Value)
+{
+	AdjustSelectedShipPower(+1.0f);
+}
+
+void ANavalNavDemoPlayerController::AdjustSelectedShipPower(float Delta)
+{
+	ASailingShipPawn* Ship = Cast<ASailingShipPawn>(GetPawn());
+	UShipPowerComponent* Power = Ship ? Ship->GetPowerComponent() : nullptr;
+	if (!Power)
 	{
-		if (UShipPowerComponent* Power = Ship->GetPowerComponent())
-		{
-			Power->SetPowerLevel(1.0f);
-			UE_LOG(LogNavalNav, Log, TEXT("Weakened %s to power 1.0"), *Ship->GetName());
-		}
+		return;
 	}
+
+	// Step of 1.0 flips zone hostility bands visibly; clamped to a sane range. SetPowerLevel fires
+	// OnPowerChanged, which the navigator uses to re-evaluate its route for the new power.
+	const float NewPower = FMath::Clamp(Power->GetPowerLevel() + Delta, 0.5f, 12.0f);
+	Power->SetPowerLevel(NewPower);
+	UE_LOG(LogNavalNav, Log, TEXT("%s power -> %.1f"), *Ship->GetName(), NewPower);
 }
 
 void ANavalNavDemoPlayerController::ToggleCVar(const TCHAR* Name, const TCHAR* Label)
