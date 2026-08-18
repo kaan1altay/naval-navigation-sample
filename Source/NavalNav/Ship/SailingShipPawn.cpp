@@ -247,10 +247,15 @@ void ASailingShipPawn::DrawShipDebug() const
 		WindToward = Wind->GetWindDirection();
 		WindFromYaw = Wind->GetWindFromYaw();
 	}
-	const FVector WindArrowStart = Origin - WindToward * 2000.0f + FVector(0.0, 0.0, 300.0);
-	const FVector WindArrowEnd = Origin + WindToward * 2000.0f + FVector(0.0, 0.0, 300.0);
-	DrawDebugDirectionalArrow(World, WindArrowStart, WindArrowEnd, 300.0f, FColor(80, 160, 255),
-		/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/8.0f * (0.5f + WindStrength));
+	// A blue arrow through the ship with a big, unambiguous head at the *downwind* end, so the sense
+	// (which way it blows) reads at a glance, plus a "W" at the head.
+	const FVector WindLift(0.0, 0.0, 300.0);
+	const FVector WindTail = Origin - WindToward * 1600.0f + WindLift;
+	const FVector WindHead = Origin + WindToward * 1600.0f + WindLift;
+	DrawDebugDirectionalArrow(World, WindTail, WindHead, /*ArrowSize=*/700.0f, FColor(80, 160, 255),
+		/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/10.0f);
+	DrawDebugString(World, WindHead + FVector(0.0, 0.0, 120.0), TEXT("W"), /*TestBaseActor=*/nullptr,
+		FColor(120, 190, 255), /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
 
 	const float AngleOffWind = FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromYaw);
 	const FString Readout = FString::Printf(

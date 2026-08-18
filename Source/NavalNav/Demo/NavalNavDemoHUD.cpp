@@ -57,18 +57,22 @@ void ANavalNavDemoHUD::DrawHUD()
 	DrawText(WindLine, MediumFont, Margin + 16.0f, Margin + 54.0f, FLinearColor(0.70f, 0.86f, 1.0f), 1.1f);
 	DrawText(KeyMap, MediumFont, Margin + 16.0f, Margin + 86.0f, FLinearColor(0.78f, 0.82f, 0.88f), 1.0f);
 
-	// --- Wind compass, top-right --------------------------------------------------------------
-	const FVector2D Centre(Canvas->SizeX - 100.0f, 100.0f);
+	// --- Wind compass, top-right: an arrow pointing where the wind blows TO --------------------
+	const FVector2D Centre(Canvas->SizeX - 110.0f, 110.0f);
 	const float Angle = FMath::DegreesToRadians(WindTowardYaw);
 	// World yaw 0 is +X (east); screen Y runs down, so negate the Y component to keep north up.
 	const FVector2D Dir(FMath::Cos(Angle), -FMath::Sin(Angle));
 	const FVector2D Perp(-Dir.Y, Dir.X);
-	const float Length = 45.0f + 35.0f * WindStrength;
+	const float Length = 50.0f + 40.0f * WindStrength;
 	const FVector2D Tip = Centre + Dir * Length;
 	const FVector2D Tail = Centre - Dir * Length;
 	const FLinearColor WindColour(0.55f, 0.82f, 1.0f);
+	const float Thickness = 6.0f;
 
-	DrawLine(Tail.X, Tail.Y, Tip.X, Tip.Y, WindColour, 4.0f);
-	DrawLine(Tip.X, Tip.Y, (Tip - Dir * 22.0f + Perp * 14.0f).X, (Tip - Dir * 22.0f + Perp * 14.0f).Y, WindColour, 4.0f);
-	DrawLine(Tip.X, Tip.Y, (Tip - Dir * 22.0f - Perp * 14.0f).X, (Tip - Dir * 22.0f - Perp * 14.0f).Y, WindColour, 4.0f);
+	DrawLine(Tail.X, Tail.Y, Tip.X, Tip.Y, WindColour, Thickness);
+	const FVector2D HeadBase = Tip - Dir * 28.0f;
+	DrawLine(Tip.X, Tip.Y, (HeadBase + Perp * 20.0f).X, (HeadBase + Perp * 20.0f).Y, WindColour, Thickness);
+	DrawLine(Tip.X, Tip.Y, (HeadBase - Perp * 20.0f).X, (HeadBase - Perp * 20.0f).Y, WindColour, Thickness);
+	// Label the head so there is no doubt which end is which.
+	DrawText(TEXT("W"), MediumFont, Tip.X + 8.0f, Tip.Y - 8.0f, WindColour, 1.1f);
 }
