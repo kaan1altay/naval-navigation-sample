@@ -1,8 +1,8 @@
 # Project status
 
-_Last updated: 2026-08-18 — Slice 4 + polish passes 1–2. **Feature-complete; frozen — fixes only.**_
+_Last updated: 2026-08-19 — Slice 4 + polish passes 1–3. **Feature-complete; frozen — fixes only.**_
 
-> **Now building on Windows.** Slices 1–4 (plus polish passes 1–2) compile with UE 5.5 + Visual
+> **Now building on Windows.** Slices 1–4 (plus polish passes 1–3) compile with UE 5.5 + Visual
 > Studio 2022 (MSVC 14.44) via Unreal Build Tool, and all **30 automation tests pass in-engine**
 > (`Automation RunTests NavalNav`, headless, `-nullrhi`). The Linux notes below are the
 > history of how Slice 1 was first authored; they no longer describe the only place the code
@@ -265,7 +265,7 @@ without disturbing the shared stamped layer.
 | --- | --- | --- |
 | `5` | Baseline | static zones, ships wander between random goals |
 | `6` | Moving zone | a patrolling zone slides across a route → a mid-voyage replan |
-| `7` | Power contrast | weak (blue) and strong (gold) ship, same start/goal → different routes |
+| `7` | Power contrast | weak (crimson) and strong (gold) ship, same start/goal → different routes |
 | `8` | Enclosure | a ship ringed by zones with one weak gap → escapes through it |
 | `9` | Power drop | a strong ship crossing a zone; press `P` to weaken it → it re-solves around |
 
@@ -360,6 +360,33 @@ soak, and a fresh-order-near-the-ship manoeuvre test).
 
 **New tunables.** Model: `MinYawAuthorityAtRest`. Helmsman: `IronsSpeedRatio`, `IronsBearAwayDeg`,
 `OrbitGiveUpTurnDeg`. **New keys:** `O` / `P` strengthen / weaken the selected ship.
+
+## Polish pass 3 (presentation)
+
+Purely visual, from a play-test; no gameplay or test changes (still 30 green). I could not judge
+the look headless — these were verified to compile, run and not crash, but the *appearance* is the
+user's call.
+
+- **Bigger, saturated hulls.** The hull is scaled to ~400 uu (about two grid cells) so it reads at
+  default zoom, on a matte material (roughness 1) so the strong sun does not wash the colour to
+  white. Fleet colours are high-contrast against the blue sea: flagship gold-orange, escorts
+  crimson. The selected ship keeps its colour and gets a bright cyan ring on the water.
+- **The navigable area is obvious.** A persistent bright frame is drawn around the grid; the sea is
+  a huge dark plane (so the horizon is never a black edge) with a tiling grid material over the
+  navigable area; and a click outside the grid is rejected with a centred "Outside navigable area"
+  message instead of sending a ship into blank sea.
+- **Motion reference.** The grid-textured inner sea, a ring of dark islets just outside the grid,
+  and a short fading wake behind every ship.
+- **Overlay text moved to the HUD edges.** Overlay 1 (navigator) is pinned to the right screen edge
+  and overlay 2 (ship/wind) to the left, on translucent panels, for the *selected ship only*, shown
+  by keys 1 / 2. The per-ship world-space text is gone; the world markers (route, look-ahead,
+  turn-in, wind/heading arrows) stay. The top-right wind compass (which did not rotate with the
+  camera) was removed — wind reads from the HUD text and the world wind arrow.
+- **Less clutter.** The ship overlay and the navigator's look-ahead/turn-in markers draw for the
+  selected ship only; routes still draw for every ship. `naval.Nav.DebugAllShips 1` restores the
+  markers for all ships.
+
+**New cvar:** `naval.Nav.DebugAllShips` (0 = markers on the selected ship only, default; 1 = all).
 
 ## Did it compile?
 
