@@ -934,6 +934,61 @@ namespace
 		TEST_CHECK(FVector::Dist2D(Position, Points.back()) < Helmsman.Params.ArrivalRadius * 1.5f);
 	}
 
+	void TestHelmsmanNoOrbit()
+	{
+		BeginTest("Helmsman arrives at a goal inside its turning circle without orbiting");
+
+		FSailingModel Model;
+		Model.Params.bEnableLeeway = false;
+		FPredictiveHelmsman Helmsman;
+		const float WindFromDeg = -90.0f;
+
+		FSailingState State;
+		State.HeadingDegrees = 0.0f;
+		State.Speed = 700.0f;
+		State.SailTrim = 1.0f;
+
+		const float TurnRadius = Model.PredictTurnRadius(State.Speed);
+		const FVector Goal(0.0, 1.3 * TurnRadius, 0.0);
+		const FNavalPath Path = MakeHelmsmanPath({ FVector(0, 0, 0), Goal });
+
+		FVector Position(0, 0, 0);
+		float LastHeading = State.HeadingDegrees;
+		float TotalTurnDeg = 0.0f;
+		float MinSpeed = State.Speed;
+		const float Dt = 0.05f;
+		bool bArrived = false;
+
+		for (int32 Tick = 0; Tick < 800 && !bArrived; ++Tick)
+		{
+			const float Before = State.HeadingDegrees;
+
+			FHelmsmanInput In;
+			In.ShipLocation = Position;
+			In.ShipHeadingDeg = Before;
+			In.ShipSpeed = State.Speed;
+			In.ShipYawRateDeg = FSailingModel::NormalizeDegrees(Before - LastHeading) / Dt;
+			In.WindFromDeg = WindFromDeg;
+			In.WindStrength = 1.0f;
+
+			const FHelmsmanOutput Out = Helmsman.Update(Path, In, Model.Params, Dt);
+			LastHeading = Before;
+
+			Model.Advance(State, Out.RudderInput, Out.SailTrim, WindFromDeg, 1.0f, Dt);
+			TotalTurnDeg += FMath::Abs(FSailingModel::NormalizeDegrees(State.HeadingDegrees - Before));
+			MinSpeed = FMath::Min(MinSpeed, State.Speed);
+
+			const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
+			Position = Position + FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
+
+			bArrived = Out.bArrived;
+		}
+
+		TEST_CHECK(bArrived);
+		TEST_CHECK(TotalTurnDeg < 540.0f);
+		TEST_CHECK(MinSpeed > 200.0f);
+	}
+
 	// -------------------------------------------------------------------------------------
 	void TestReplanOffRoute()
 	{
@@ -1100,6 +1155,7 @@ int main()
 	TestHelmsmanMissedWaypoint();
 	TestHelmsmanTack();
 	TestHelmsmanClosedLoop();
+	TestHelmsmanNoOrbit();
 
 	TestReplanOffRoute();
 	TestReplanBlockedPerShip();

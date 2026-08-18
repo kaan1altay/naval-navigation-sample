@@ -245,4 +245,68 @@ bool FNavalNavHelmsmanClosedLoopTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+//---------------------------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNavalNavHelmsmanNoOrbitTest, "NavalNav.Helmsman.ArrivesWithoutOrbiting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNavalNavHelmsmanNoOrbitTest::RunTest(const FString& Parameters)
+{
+	FSailingModelParams Sail;
+	FSailingModel Model;
+	Model.Params = Sail;
+	Model.Params.bEnableLeeway = false;
+	FPredictiveHelmsman Helmsman;
+
+	const float WindFromDeg = -90.0f; // beam reach on heading 0
+
+	FSailingState State;
+	State.HeadingDegrees = 0.0f;
+	State.Speed = 700.0f;
+	State.SailTrim = 1.0f;
+
+	// A goal placed abeam at 1.3x the turning radius sits *inside* the circle the ship carves when it
+	// turns toward it — the exact geometry that used to make it orbit forever.
+	const float TurnRadius = Model.PredictTurnRadius(State.Speed);
+	const FVector Goal(0.0, 1.3 * TurnRadius, 0.0);
+	const FNavalPath Path = NavalNavHelmsmanTest::MakePath({ FVector(0, 0, 0), Goal });
+
+	FVector Position(0, 0, 0);
+	float LastHeading = State.HeadingDegrees;
+	float TotalTurnDeg = 0.0f;
+	float MinSpeed = State.Speed;
+	const float Dt = 0.05f;
+	bool bArrived = false;
+
+	for (int32 Tick = 0; Tick < 800 && !bArrived; ++Tick)
+	{
+		const float Before = State.HeadingDegrees;
+
+		FHelmsmanInput In;
+		In.ShipLocation = Position;
+		In.ShipHeadingDeg = Before;
+		In.ShipSpeed = State.Speed;
+		In.ShipYawRateDeg = FSailingModel::NormalizeDegrees(Before - LastHeading) / Dt;
+		In.WindFromDeg = WindFromDeg;
+		In.WindStrength = 1.0f;
+
+		const FHelmsmanOutput Out = Helmsman.Update(Path, In, Model.Params, Dt);
+		LastHeading = Before;
+
+		Model.Advance(State, Out.RudderInput, Out.SailTrim, WindFromDeg, 1.0f, Dt);
+		TotalTurnDeg += FMath::Abs(FSailingModel::NormalizeDegrees(State.HeadingDegrees - Before));
+		MinSpeed = FMath::Min(MinSpeed, State.Speed);
+
+		const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
+		Position += FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
+
+		bArrived = Out.bArrived;
+	}
+
+	TestTrue(TEXT("The ship arrives at a goal inside its turning circle"), bArrived);
+	TestTrue(TEXT("It does so without orbiting (well under two full turns)"), TotalTurnDeg < 540.0f);
+	TestTrue(TEXT("It never stalled its steerage way to a crawl"), MinSpeed > 200.0f);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

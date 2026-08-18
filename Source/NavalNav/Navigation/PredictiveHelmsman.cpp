@@ -95,8 +95,40 @@ FHelmsmanOutput FPredictiveHelmsman::Update(const FNavalPath& Path, const FHelms
 	const FVector& Goal = W[Num - 1];
 	const float GoalDist = static_cast<float>(FVector::Dist2D(Ship, Goal));
 
+	// The heading and turning circle are needed both for arrival and, later, for steering.
+	const float HeadingRad = FMath::DegreesToRadians(Input.ShipHeadingDeg);
+	const FVector Forward(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0);
+
+	FSailingModel Model;
+	Model.Params = Sail;
+	const float TurnRadius = Model.PredictTurnRadius(Input.ShipSpeed);
+
 	// --- Arrival short-circuits everything ---------------------------------------------------
-	if (GoalDist < Params.ArrivalRadius)
+	// Three ways to count as arrived, so a tight or overshooting approach can never orbit forever:
+	//  1. plainly inside the accept radius;
+	//  2. within a turning-circle of the goal while the goal is off the bow — the ship physically
+	//     cannot get closer by turning, so circling it would be pointless;
+	//  3. the goal has slipped behind the ship, close enough that coming about is not worth it.
+	bool bArrived = GoalDist < Params.ArrivalRadius;
+	if (!bArrived && TurnRadius < 1.0e9f)
+	{
+		const float BearingToGoalErr = FMath::Abs(FSailingModel::NormalizeDegrees(BearingDegrees(Ship, Goal) - Input.ShipHeadingDeg));
+		const bool bGoalOffBow = BearingToGoalErr > 60.0f;
+		if (bGoalOffBow && GoalDist < TurnRadius * Params.ArrivalTurnRadiusFactor)
+		{
+			bArrived = true;
+		}
+	}
+	if (!bArrived)
+	{
+		const bool bGoalBehind = Dot2D(Forward, Goal - Ship) < 0.0;
+		if (bGoalBehind && GoalDist < Params.ArrivalRadius * Params.ArrivalBehindFactor)
+		{
+			bArrived = true;
+		}
+	}
+
+	if (bArrived)
 	{
 		bTacking = false;
 		TackSign = 0;
@@ -233,6 +265,10 @@ FHelmsmanOutput FPredictiveHelmsman::Update(const FNavalPath& Path, const FHelms
 		const float TurnFrac = FMath::Clamp(FMath::Abs(BearingError) / FMath::Max(Params.TurnTrimEaseDeg, 1.0f), 0.0f, 1.0f);
 		Trim = FMath::Min(Trim, 1.0f - (1.0f - Params.MinTurnTrim) * TurnFrac);
 	}
+
+	// Keep steerage way: we only reach here while still following (arrival already returned), so the
+	// ship must not sheet out so far it loses the way it needs to turn onto — that is the orbit trap.
+	Trim = FMath::Max(Trim, Params.MinSteerageTrim);
 
 	// --- Fill the output ----------------------------------------------------------------------
 	Out.RudderInput = Rudder;

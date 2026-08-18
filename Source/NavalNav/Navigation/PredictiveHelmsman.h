@@ -71,6 +71,19 @@ struct NAVALNAV_API FHelmsmanParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Arrival", meta = (ClampMin = "0.0"))
 	float SlowdownRadius = 4000.0f;
 
+	/**
+	 * A ship cannot reach a point inside its own turning circle by turning toward it — it orbits.
+	 * So the final waypoint also counts as reached once the ship is within this factor of its
+	 * turning radius of the goal AND the goal is off the bow (not straight ahead). This is what
+	 * stops the "circle the goal forever" behaviour on a tight approach.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Arrival", meta = (ClampMin = "0.0"))
+	float ArrivalTurnRadiusFactor = 1.2f;
+
+	/** A final waypoint that has fallen behind the ship counts as reached within this multiple of ArrivalRadius. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Arrival", meta = (ClampMin = "1.0"))
+	float ArrivalBehindFactor = 2.0f;
+
 	//~ Trim ------------------------------------------------------------------------------------
 
 	/** Ease the sheets in a hard turn so the ship carves rather than powering wide. */
@@ -84,6 +97,14 @@ struct NAVALNAV_API FHelmsmanParams
 	/** Floor the turn-ease trim never drops below, so the ship keeps enough way on to steer. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Trim", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MinTurnTrim = 0.5f;
+
+	/**
+	 * Trim is never eased below this while still following, so the ship keeps steerage way. Arrival
+	 * slowdown and turn-easing both floor here — a ship with no way on has no rudder authority and
+	 * would otherwise coast to a stall short of the goal and orbit it. Only released once Arrived.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Helmsman|Trim", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinSteerageTrim = 0.35f;
 
 	//~ Tacking ---------------------------------------------------------------------------------
 
