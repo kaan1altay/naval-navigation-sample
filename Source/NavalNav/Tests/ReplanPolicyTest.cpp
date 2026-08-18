@@ -176,8 +176,8 @@ bool FNavalNavReplanHysteresisTest::RunTest(const FString& Parameters)
 	}
 
 	// The min-interval of 1 s should collapse 100 jitters into about ten replans, not a hundred.
-	TestTrue(TEXT("Jitters do not cause a replan storm"), Policy.GetReplanCount() <= 12);
-	TestTrue(TEXT("But the relevant change is still acted on periodically"), Policy.GetReplanCount() >= 8);
+	TestTrue(TEXT("Jitters do not cause a replan storm"), Policy.GetValidationCount() <= 12);
+	TestTrue(TEXT("But the relevant change is still acted on periodically"), Policy.GetValidationCount() >= 8);
 
 	return true;
 }

@@ -112,15 +112,29 @@ float UNavalNavigatorComponent::GetShipPower() const
 	return (Ship && Ship->GetPowerComponent()) ? Ship->GetPowerComponent()->GetPowerLevel() : 1.0f;
 }
 
-void UNavalNavigatorComponent::RequestMoveTo(const FVector& Goal)
+void UNavalNavigatorComponent::RequestMoveTo(const FVector& Goal, bool bPlayerOrder)
 {
 	if (!Ship)
 	{
 		return;
 	}
 
+	if (bPlayerOrder)
+	{
+		bPlayerControlled = true;
+	}
+
 	CurrentGoal = Goal;
 	bHasGoal = true;
+
+	if (State == ENavigatorState::Escaping)
+	{
+		// Don't abandon a break-off mid-run: make this the goal to resume once the ship is clear.
+		OriginalGoal = Goal;
+		bHasOriginalGoal = true;
+		return;
+	}
+
 	bHasOriginalGoal = false;
 
 	SetState(ENavigatorState::Planning);
@@ -201,6 +215,12 @@ void UNavalNavigatorComponent::ConsiderReplan(EReplanReason Reason)
 		// already ahead of the bow: the splice keeps heading continuity, no reset-to-start jerk.
 		CurrentPath = Candidate;
 		Helmsman.Reset();
+
+		// Only an actual route change counts as a replan. A periodic re-validation that yields the
+		// same path is not adopted here and does not tick this counter — it stays honest on a static
+		// route.
+		++ReplanCount;
+		LastReplanReason = Reason;
 	}
 }
 
@@ -414,12 +434,13 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 	DrawDebugSphere(World, LastOutput.TurnInPoint + Lift, 180.0f, 12, FColor(255, 140, 40), false, -1.0f);
 
 	const FString Readout = FString::Printf(
-		TEXT("Navigator: %s  | replans %d (%s)\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
-		StateName(State), ReplanPolicy.GetReplanCount(), ReasonName(ReplanPolicy.GetLastReason()),
+		TEXT("Navigator: %s%s  | validations %d / replans %d (%s)\nwaypoint %d/%d | bearing err %.0f deg | rudder %.2f | trim %.2f%s"),
+		StateName(State), bPlayerControlled ? TEXT(" [player]") : TEXT(""),
+		ReplanPolicy.GetValidationCount(), ReplanCount, ReasonName(LastReplanReason),
 		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
 		LastOutput.BearingErrorDeg, LastOutput.RudderInput, LastOutput.SailTrim,
 		LastOutput.bTacking ? TEXT(" | TACKING") : TEXT(""));
 	DrawDebugString(World, Ship->GetActorLocation() + FVector(0.0, 0.0, 650.0), Readout,
-		/*TestBaseActor=*/nullptr, FColor::Yellow, /*Duration=*/0.0f, /*bDrawShadow=*/true);
+		/*TestBaseActor=*/nullptr, FColor::Yellow, /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
 #endif // ENABLE_DRAW_DEBUG
 }

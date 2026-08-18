@@ -62,9 +62,14 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	//~ End UActorComponent interface
 
-	/** Plans a route to Goal (world space) and starts following it. Replaces any current order. */
+	/**
+	 * Plans a route to Goal (world space) and starts following it, replacing any current order.
+	 * A player order marks the ship player-owned so the demo's wander logic leaves it alone; issued
+	 * while Escaping, it becomes the goal to resume once the ship is clear rather than interrupting
+	 * the break-off.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Naval|Navigation")
-	void RequestMoveTo(const FVector& Goal);
+	void RequestMoveTo(const FVector& Goal, bool bPlayerOrder = false);
 
 	/** Drops the current order; the ship sheets out and coasts to a stop. */
 	UFUNCTION(BlueprintCallable, Category = "Naval|Navigation")
@@ -79,8 +84,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
 	const FHelmsmanOutput& GetLastOutput() const { return LastOutput; }
 
+	/** How many times the route was actually re-planned (adopted a new path). */
 	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
-	int32 GetReplanCount() const { return ReplanPolicy.GetReplanCount(); }
+	int32 GetReplanCount() const { return ReplanCount; }
+
+	/** How many times the policy fired a validation (asked to re-plan, adopted or not). */
+	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
+	int32 GetValidationCount() const { return ReplanPolicy.GetValidationCount(); }
+
+	/** True once a player order was issued; the demo's auto-wander then leaves this ship alone. */
+	UFUNCTION(BlueprintPure, Category = "Naval|Navigation")
+	bool IsPlayerControlled() const { return bPlayerControlled; }
 
 	/** Fires once when the ship reaches its goal. */
 	UPROPERTY(BlueprintAssignable, Category = "Naval|Navigation")
@@ -187,4 +201,15 @@ private:
 
 	/** Previous heading, for a finite-difference yaw rate to feed the helmsman's damping term. */
 	float LastHeadingDeg = 0.0f;
+
+	/** Times the route was actually replaced (distinct from the policy's validation count). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Naval|Navigation", meta = (AllowPrivateAccess = "true"))
+	int32 ReplanCount = 0;
+
+	/** Reason for the most recent *adopted* replan, for the overlay. */
+	EReplanReason LastReplanReason = EReplanReason::None;
+
+	/** Set by a player order; the demo's wander will not re-task this ship. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Naval|Navigation", meta = (AllowPrivateAccess = "true"))
+	bool bPlayerControlled = false;
 };

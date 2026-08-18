@@ -1029,8 +1029,8 @@ namespace
 			Policy.NotifyThreatChanged();
 			Policy.Evaluate(Sit, OpenWater);
 		}
-		TEST_CHECK(Policy.GetReplanCount() <= 12);
-		TEST_CHECK(Policy.GetReplanCount() >= 8);
+		TEST_CHECK(Policy.GetValidationCount() <= 12);
+		TEST_CHECK(Policy.GetValidationCount() >= 8);
 	}
 
 	void TestReplanRelevance()

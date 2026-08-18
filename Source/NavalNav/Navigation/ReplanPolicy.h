@@ -86,9 +86,13 @@ struct NAVALNAV_API FReplanPolicyParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Replan|Hysteresis", meta = (ClampMin = "0.0"))
 	float MinReplanInterval = 1.0f;
 
-	/** Replan unconditionally once the current path is older than this (s). The cheap backstop. */
+	/**
+	 * Re-validate the current path once it is older than this (s): re-plan and, only if the result
+	 * is meaningfully better, adopt it. A backstop, not a churn source — on a static route the
+	 * re-plan matches the current path and nothing changes.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Replan|Hysteresis", meta = (ClampMin = "0.0"))
-	float MaxPathAge = 8.0f;
+	float MaxPathAge = 30.0f;
 
 	/** A still-valid path is only replaced when the new one is cheaper than old * this ratio. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Replan|Hysteresis", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -158,7 +162,9 @@ struct NAVALNAV_API FReplanPolicy
 	static bool IsChangeRelevant(const FVector& Point, float PointRadius, const FVector& ShipLocation,
 		const FNavalPath& Path, int32 ActiveWaypoint, float RelevanceRadius);
 
-	int32 GetReplanCount() const { return ReplanCount; }
+	/** How many times a trigger fired and the owner was asked to re-plan (a *validation*, not
+	 *  necessarily a route change — the owner may keep the old path if the new one is no better). */
+	int32 GetValidationCount() const { return ValidationCount; }
 	EReplanReason GetLastReason() const { return LastReason; }
 
 private:
@@ -171,6 +177,6 @@ private:
 	bool bThreatChangedPending = false;
 	bool bPowerChangedPending = false;
 	bool bLastPathBlocked = false;
-	int32 ReplanCount = 0;
+	int32 ValidationCount = 0;
 	EReplanReason LastReason = EReplanReason::None;
 };

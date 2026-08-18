@@ -166,7 +166,7 @@ FReplanDecision FReplanPolicy::Evaluate(const FReplanSituation& Situation, TFunc
 		bThreatChangedPending = false;
 		bPowerChangedPending = false;
 		bLastPathBlocked = false; // recomputed against the new path on the next cadence tick
-		++ReplanCount;
+		++ValidationCount;
 		LastReason = Reason;
 	}
 
