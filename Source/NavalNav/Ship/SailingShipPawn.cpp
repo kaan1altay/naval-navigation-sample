@@ -263,7 +263,11 @@ void ASailingShipPawn::DrawShipDebug() const
 		*GetName(), State.HeadingDegrees, State.Speed, State.RudderAngleDegrees, State.SailTrim,
 		WindStrength * 100.0f, AngleOffWind,
 		AngleOffWind <= GetEffectiveParams().NoGoAngleDegrees ? TEXT("  (NO-GO)") : TEXT(""));
-	DrawDebugString(World, Origin + FVector(0.0, 0.0, 400.0), Readout, /*TestBaseActor=*/nullptr,
-		FColor::White, /*Duration=*/0.0f, /*bDrawShadow=*/true);
+
+	// Offset to the ship's port side (screen-left under the yaw-inheriting chase cam) so it does not
+	// collide with the navigator overlay (drawn to starboard); matched font scale to it.
+	const FVector Port(-FMath::Sin(HeadingRad), FMath::Cos(HeadingRad), 0.0);
+	DrawDebugString(World, GetActorLocation() + Port * 1500.0 + FVector(0.0, 0.0, 550.0), Readout,
+		/*TestBaseActor=*/nullptr, FColor::White, /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
 #endif // ENABLE_DRAW_DEBUG
 }

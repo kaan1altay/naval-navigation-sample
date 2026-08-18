@@ -440,7 +440,11 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 		LastOutput.ActiveWaypoint, FMath::Max(0, CurrentPath.Num() - 1),
 		LastOutput.BearingErrorDeg, LastOutput.RudderInput, LastOutput.SailTrim,
 		LastOutput.bTacking ? TEXT(" | TACKING") : TEXT(""));
-	DrawDebugString(World, Ship->GetActorLocation() + FVector(0.0, 0.0, 650.0), Readout,
+	// Offset to the ship's starboard side so it never collides with the ship overlay (drawn to port).
+	// The chase cam inherits the ship's yaw, so starboard reads as screen-right.
+	const float HeadRad = FMath::DegreesToRadians(Ship->GetHeadingDegrees());
+	const FVector Starboard(FMath::Sin(HeadRad), -FMath::Cos(HeadRad), 0.0);
+	DrawDebugString(World, Ship->GetActorLocation() + Starboard * 1500.0 + FVector(0.0, 0.0, 550.0), Readout,
 		/*TestBaseActor=*/nullptr, FColor::Yellow, /*Duration=*/0.0f, /*bDrawShadow=*/true, /*FontScale=*/1.5f);
 #endif // ENABLE_DRAW_DEBUG
 }
