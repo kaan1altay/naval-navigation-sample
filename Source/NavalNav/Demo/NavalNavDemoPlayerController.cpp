@@ -119,6 +119,16 @@ void ANavalNavDemoPlayerController::PossessShipAtIndex(int32 Index)
 	}
 
 	CurrentShipIndex = ((Index % Ships.Num()) + Ships.Num()) % Ships.Num();
+
+	// Highlight only the ship we are commanding, so it is obvious which one your clicks steer.
+	for (int32 ShipIndex = 0; ShipIndex < Ships.Num(); ++ShipIndex)
+	{
+		if (ASailingShipPawn* Ship = Ships[ShipIndex])
+		{
+			Ship->SetSelected(ShipIndex == CurrentShipIndex);
+		}
+	}
+
 	if (ASailingShipPawn* Ship = Ships[CurrentShipIndex])
 	{
 		Possess(Ship);

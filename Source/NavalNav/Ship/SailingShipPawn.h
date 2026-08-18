@@ -36,6 +36,7 @@ public:
 	ASailingShipPawn();
 
 	//~ Begin AActor / APawn interface
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	/** Lets the ship sail and draw in an editor viewport for tuning, without entering PIE. */
@@ -81,9 +82,13 @@ public:
 
 	UShipPowerComponent* GetPowerComponent() const { return PowerComponent; }
 
-	/** Tints the hull by creating a dynamic material instance on the mesh. Used to colour the demo fleet. */
+	/** Tints the hull. Used to colour the demo fleet (flagship gold, escorts steel blue). */
 	UFUNCTION(BlueprintCallable, Category = "Sailing")
 	void SetHullColor(FLinearColor Color);
+
+	/** Marks this ship the player-selected one, which brightens its hull so it stands out. */
+	UFUNCTION(BlueprintCallable, Category = "Sailing")
+	void SetSelected(bool bInSelected);
 
 	/** Nudges the chase-cam boom length, clamped to a sensible range. Used by the demo's mouse-wheel zoom. */
 	UFUNCTION(BlueprintCallable, Category = "Sailing")
@@ -120,9 +125,27 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> ShipRoot;
 
-	/** Placeholder hull mesh; no mesh is assigned by default, so a level can drop one in. */
+	/** Builds the hull's dynamic material (once) and applies the current colour and selection. */
+	void RefreshHullMaterial();
+
+	/** Placeholder hull mesh; a level can swap the mesh, but it keeps its dynamic material tint. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> HullMesh;
+
+	/** Base lit material the hull's dynamic instance is made from (an engine primitive material). */
+	UPROPERTY()
+	TObjectPtr<class UMaterialInterface> HullBaseMaterial;
+
+	/** Dynamic instance carrying the per-ship colour, so tinting is reliable regardless of the mesh. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> HullMaterial;
+
+	/** The ship's assigned colour (before any selection brightening). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
+	FLinearColor HullColor = FLinearColor(0.55f, 0.68f, 0.85f);
+
+	/** Whether this ship is the player-selected one (brightened). */
+	bool bSelected = false;
 
 	/** Chase-cam boom, so possessing the ship gives a view over the transom without extra setup. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sailing", meta = (AllowPrivateAccess = "true"))

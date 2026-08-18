@@ -49,6 +49,14 @@ ASailingShipPawn::ASailingShipPawn()
 		HullMesh->SetRelativeScale3D(FVector(0.7, 0.7, 2.5));
 	}
 
+	// Explicitly base the hull on a lit material that exposes a "Color" vector parameter. The cone's
+	// own default material does not, which is why the ships were rendering grey.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> HullMat(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (HullMat.Succeeded())
+	{
+		HullBaseMaterial = HullMat.Object;
+	}
+
 	// Chase cam over the transom. The boom hangs off the root, so it inherits the ship's yaw and
 	// stays behind the stern as she turns, without any per-frame camera code.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -74,9 +82,17 @@ ASailingShipPawn::ASailingShipPawn()
 	bUseControllerRotationRoll = false;
 }
 
+void ASailingShipPawn::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	RefreshHullMaterial();
+}
+
 void ASailingShipPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	RefreshHullMaterial();
 
 	// Start sailing on whatever heading the ship was placed at, so a level author points the bow
 	// and the model takes it from there.
@@ -100,16 +116,39 @@ void ASailingShipPawn::Tick(float DeltaSeconds)
 	}
 }
 
+void ASailingShipPawn::RefreshHullMaterial()
+{
+	if (!HullMesh)
+	{
+		return;
+	}
+
+	// Make (once) a dynamic instance of a material we know has a "Color" param, and assign it, so
+	// the tint takes regardless of what mesh the level assigned.
+	if (!HullMaterial && HullBaseMaterial)
+	{
+		HullMaterial = UMaterialInstanceDynamic::Create(HullBaseMaterial, this);
+		HullMesh->SetMaterial(0, HullMaterial);
+	}
+
+	if (HullMaterial)
+	{
+		// The selected ship reads brighter and warmer so it is easy to pick out of the fleet.
+		const FLinearColor Applied = bSelected ? (HullColor * 1.6f + FLinearColor(0.15f, 0.15f, 0.15f)) : HullColor;
+		HullMaterial->SetVectorParameterValue(TEXT("Color"), Applied);
+	}
+}
+
 void ASailingShipPawn::SetHullColor(FLinearColor Color)
 {
-	if (HullMesh && HullMesh->GetStaticMesh())
-	{
-		// The engine basic shapes use BasicShapeMaterial, which exposes a "Color" vector param.
-		if (UMaterialInstanceDynamic* Dynamic = HullMesh->CreateDynamicMaterialInstance(0))
-		{
-			Dynamic->SetVectorParameterValue(TEXT("Color"), Color);
-		}
-	}
+	HullColor = Color;
+	RefreshHullMaterial();
+}
+
+void ASailingShipPawn::SetSelected(bool bInSelected)
+{
+	bSelected = bInSelected;
+	RefreshHullMaterial();
 }
 
 void ASailingShipPawn::AddCameraZoom(float Delta)
