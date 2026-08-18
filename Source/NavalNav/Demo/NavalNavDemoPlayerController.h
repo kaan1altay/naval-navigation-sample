@@ -54,6 +54,10 @@ private:
 	void OnScenario8(const FInputActionValue& Value);
 	void OnScenario9(const FInputActionValue& Value);
 	void OnWeakenShip(const FInputActionValue& Value);
+	void OnWindLeft(const FInputActionValue& Value);
+	void OnWindRight(const FInputActionValue& Value);
+	void OnWindStronger(const FInputActionValue& Value);
+	void OnWindWeaker(const FInputActionValue& Value);
 
 	/** Starts a scenario on the demo GameMode. */
 	void StartScenario(int32 Index);
@@ -87,6 +91,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> WeakenAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> WindLeftAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> WindRightAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> WindStrongerAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> WindWeakerAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> MappingContext;

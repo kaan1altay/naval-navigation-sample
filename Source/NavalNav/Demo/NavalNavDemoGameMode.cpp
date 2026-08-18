@@ -7,6 +7,7 @@
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Demo/NavalNavDemoHUD.h"
 #include "Demo/NavalNavDemoPlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/DirectionalLight.h"
@@ -31,6 +32,7 @@
 ANavalNavDemoGameMode::ANavalNavDemoGameMode()
 {
 	PlayerControllerClass = ANavalNavDemoPlayerController::StaticClass();
+	HUDClass = ANavalNavDemoHUD::StaticClass();
 
 	// We spawn and possess ships ourselves; there is no PlayerStart on a blank map, so leaving the
 	// default pawn null avoids an orphan pawn at the origin.
@@ -79,17 +81,10 @@ void ANavalNavDemoGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// The scenario title, wind and key map now live on the HUD (ANavalNavDemoHUD); here we only draw
+	// the world-space overlays.
 	DrawGridOverlay();
 	DrawZoneAnnotations();
-
-#if !UE_BUILD_SHIPPING
-	if (GEngine && !ScenarioTitle.IsEmpty())
-	{
-		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0x4E5343) /*NSC*/, 0.0f, FColor::White, ScenarioTitle);
-		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0x4E4B45) /*NKE*/, 0.0f, FColor(180, 200, 255),
-			FString(TEXT("Keys: L-click move | Tab cycle ship | 1 nav 2 ship 3 grid | 5-9 scenarios | P weaken | wheel zoom")));
-	}
-#endif
 }
 
 void ANavalNavDemoGameMode::SpawnEnvironment()

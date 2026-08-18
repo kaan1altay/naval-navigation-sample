@@ -17,6 +17,7 @@
 #include "Navigation/NavalNavigatorComponent.h"
 #include "Ship/SailingShipPawn.h"
 #include "Ship/ShipPowerComponent.h"
+#include "Ship/WindSubsystem.h"
 
 void ANavalNavDemoPlayerController::EnsureInputAssets()
 {
@@ -39,6 +40,10 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	GridDebugAction = MakeAction(TEXT("DemoGridDebugAction"), EInputActionValueType::Boolean);
 	ZoomAction = MakeAction(TEXT("DemoZoomAction"), EInputActionValueType::Axis1D);
 	WeakenAction = MakeAction(TEXT("DemoWeakenAction"), EInputActionValueType::Boolean);
+	WindLeftAction = MakeAction(TEXT("DemoWindLeftAction"), EInputActionValueType::Boolean);
+	WindRightAction = MakeAction(TEXT("DemoWindRightAction"), EInputActionValueType::Boolean);
+	WindStrongerAction = MakeAction(TEXT("DemoWindStrongerAction"), EInputActionValueType::Boolean);
+	WindWeakerAction = MakeAction(TEXT("DemoWindWeakerAction"), EInputActionValueType::Boolean);
 	for (int32 i = 0; i < 5; ++i)
 	{
 		ScenarioActions[i] = MakeAction(*FString::Printf(TEXT("DemoScenario%dAction"), i + 5), EInputActionValueType::Boolean);
@@ -52,6 +57,10 @@ void ANavalNavDemoPlayerController::EnsureInputAssets()
 	MappingContext->MapKey(GridDebugAction, EKeys::Three);
 	MappingContext->MapKey(ZoomAction, EKeys::MouseWheelAxis);
 	MappingContext->MapKey(WeakenAction, EKeys::P);
+	MappingContext->MapKey(WindLeftAction, EKeys::Left);
+	MappingContext->MapKey(WindRightAction, EKeys::Right);
+	MappingContext->MapKey(WindStrongerAction, EKeys::Up);
+	MappingContext->MapKey(WindWeakerAction, EKeys::Down);
 	MappingContext->MapKey(ScenarioActions[0], EKeys::Five);
 	MappingContext->MapKey(ScenarioActions[1], EKeys::Six);
 	MappingContext->MapKey(ScenarioActions[2], EKeys::Seven);
@@ -98,6 +107,10 @@ void ANavalNavDemoPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(ScenarioActions[2], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario7);
 		EnhancedInput->BindAction(ScenarioActions[3], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario8);
 		EnhancedInput->BindAction(ScenarioActions[4], ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnScenario9);
+		EnhancedInput->BindAction(WindLeftAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnWindLeft);
+		EnhancedInput->BindAction(WindRightAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnWindRight);
+		EnhancedInput->BindAction(WindStrongerAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnWindStronger);
+		EnhancedInput->BindAction(WindWeakerAction, ETriggerEvent::Started, this, &ANavalNavDemoPlayerController::OnWindWeaker);
 	}
 }
 
@@ -206,6 +219,38 @@ void ANavalNavDemoPlayerController::StartScenario(int32 Index)
 	if (ANavalNavDemoGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ANavalNavDemoGameMode>() : nullptr)
 	{
 		GameMode->StartScenario(Index);
+	}
+}
+
+void ANavalNavDemoPlayerController::OnWindLeft(const FInputActionValue& Value)
+{
+	if (UWindSubsystem* Wind = GetWorld() ? GetWorld()->GetSubsystem<UWindSubsystem>() : nullptr)
+	{
+		Wind->AddWindYaw(-15.0f);
+	}
+}
+
+void ANavalNavDemoPlayerController::OnWindRight(const FInputActionValue& Value)
+{
+	if (UWindSubsystem* Wind = GetWorld() ? GetWorld()->GetSubsystem<UWindSubsystem>() : nullptr)
+	{
+		Wind->AddWindYaw(15.0f);
+	}
+}
+
+void ANavalNavDemoPlayerController::OnWindStronger(const FInputActionValue& Value)
+{
+	if (UWindSubsystem* Wind = GetWorld() ? GetWorld()->GetSubsystem<UWindSubsystem>() : nullptr)
+	{
+		Wind->AddWindStrength(0.1f);
+	}
+}
+
+void ANavalNavDemoPlayerController::OnWindWeaker(const FInputActionValue& Value)
+{
+	if (UWindSubsystem* Wind = GetWorld() ? GetWorld()->GetSubsystem<UWindSubsystem>() : nullptr)
+	{
+		Wind->AddWindStrength(-0.1f);
 	}
 }
 

@@ -2,6 +2,7 @@
 
 #include "Ship/WindSubsystem.h"
 
+#include "NavalNav.h"
 #include "Ship/SailingModel.h"
 
 namespace
@@ -80,4 +81,19 @@ void UWindSubsystem::SetWindDirectionYaw(float NewYawDegrees)
 void UWindSubsystem::SetWindStrength(float NewStrength)
 {
 	WindStrength = FMath::Clamp(NewStrength, 0.0f, 1.0f);
+}
+
+void UWindSubsystem::AddWindYaw(float DeltaDegrees)
+{
+	// Fold in any active console override, then clear it so this manual control now wins.
+	WindDirectionYawDegrees = FSailingModel::NormalizeDegrees(GetWindDirectionYaw() + DeltaDegrees);
+	CVarWindYaw->Set(*FString::SanitizeFloat(WindYawUnset), ECVF_SetByConsole);
+	UE_LOG(LogNavalNav, Log, TEXT("Wind direction: %.0f deg (toward)"), WindDirectionYawDegrees);
+}
+
+void UWindSubsystem::AddWindStrength(float Delta)
+{
+	WindStrength = FMath::Clamp(GetWindStrength() + Delta, 0.0f, 1.0f);
+	CVarWindStrength->Set(*FString::SanitizeFloat(WindStrengthUnset), ECVF_SetByConsole);
+	UE_LOG(LogNavalNav, Log, TEXT("Wind strength: %.0f%%"), WindStrength * 100.0f);
 }

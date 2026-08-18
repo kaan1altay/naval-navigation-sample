@@ -59,6 +59,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Naval|Wind")
 	void SetWindStrength(float NewStrength);
 
+	/** Rotates the wind by DeltaDegrees and takes manual control (clears any console override). For the demo keys. */
+	UFUNCTION(BlueprintCallable, Category = "Naval|Wind")
+	void AddWindYaw(float DeltaDegrees);
+
+	/** Changes wind strength by Delta (clamped 0..1) and takes manual control. For the demo keys. */
+	UFUNCTION(BlueprintCallable, Category = "Naval|Wind")
+	void AddWindStrength(float Delta);
+
 	/** Direction the wind blows toward, in yaw degrees. Editable in DefaultGame.ini. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Config, Category = "Naval|Wind")
 	float WindDirectionYawDegrees = 45.0f;
