@@ -1,155 +1,138 @@
-# NavalNavSample
+# Naval Navigation Sample
 
-Threat-aware naval navigation for physically-driven sailing ships — a clean-room UE5 C++ sample.
+**Threat-aware navigation for physically-driven sailing ships — Unreal Engine 5.5, C++.**
 
-A world-space sea grid carries a mutable *threat cost layer* fed by danger zones, and an A\*
-pathfinder plans routes that trade distance against danger instead of only against length. A
-ship that outguns a zone sails straight through it; a weaker one goes around.
+A clean-room portfolio sample by [Kaan Altay](https://github.com/kaan1altay), exploring the ideas behind a navigation system I originally built for *[Grog 'n Glory](https://store.steampowered.com/app/2835500/Grog_n_Glory/)*, a co-op open-world pirate action-adventure. Everything here was written from scratch for this repo.
 
-- **Engine:** Unreal Engine 5.5 · single `NavalNav` C++ runtime module · **License:** MIT
-- **Status:** Slice 4 — feature-complete (replanning, escape, dynamic zones, demo scenarios) — see **[docs/STATUS.md](docs/STATUS.md)**
+![Two ships, same goal: the weak ship (cyan route) sails around the danger zone, the strong ship (gold route) sails straight through](docs/media/scenario7_power_contrast.gif)
 
-> Written from scratch as a portfolio piece. It builds with UE 5.5 + Visual Studio 2022 and all
-> 30 automation tests pass in-engine; the navigation, sailing, helmsman and replanning cores are
-> also verified by an engine-free harness that runs with a plain compiler. `docs/STATUS.md` has the
-> details.
+*Same start, same goal, different power: the weak ship routes around the zone, the strong one sails through it.*
 
-## The idea
+---
 
-Ordinary grid pathfinding asks "what is the shortest way there?". A warship asks "what is the
-way there that I survive?" — and the answer depends on who is asking. Threat here is a
-continuous cost layer rather than a set of blocking volumes, so routes *slide* around danger
-as it moves instead of flipping between "straight through" and "all the way around".
+## Why not just use a NavMesh?
+
+Stock UE navigation assumes an agent that can stop, pivot in place, and follow a polyline exactly. A sailing ship can do none of that: it is driven by **wind and rudder**, has real turning inertia, cannot sail into the wind at all, and can't even turn without way on. On top of that, the open sea here is covered by **danger zones of varying power** that move and change at runtime — and whether a zone is dangerous depends on *who is asking*.
+
+So this sample builds the alternative:
+
+- a **sea-grid cost field** instead of blocking volumes — threat is soft cost, not a wall,
+- an **A\* planner that knows nothing about physics**, producing intent-level routes,
+- a **predictive helmsman that owns the physics**, treating the path as intent rather than a rail,
+- and an **event-driven replanning policy** that keeps routes honest as the world changes.
+
+## The core ideas
+
+### 1. Threat is relative, not absolute
+
+Every danger zone has a **power level**; so does every ship.
 
 ```
-Source/NavalNav/
-  Grid/SeaGridTypes.*        Grid geometry + base and threat cost layers (no UObject: unit-testable)
-  Grid/SeaGrid.*             USeaGridSubsystem — one grid per world, lazy threat rebuild
-  Grid/SeaGridPathfinder.*   8-neighbour A*, octile heuristic, injectable cost, cost-aware string pull
-  Grid/SeaGridDebugDraw.*    Throttled immediate-mode overlay for the cost field and routes
-  Threat/DangerZone.*        ADangerZone — a footprint (position, radius, power) and nothing more
-  Threat/ThreatEvaluator.*   Pure tuning rules: relative hostility, distance falloff
-  Ship/SailingModel.*        Wind polar + drag + rudder, engine-free and unit-tested
-  Ship/WindSubsystem.*       UWindSubsystem — one wind per world, drift and console overrides
-  Ship/SailingShipPawn.*     ASailingShipPawn — kinematic hull wrapping the sailing model
-  Ship/ShipPowerComponent.*  Combat power + FOnPowerChanged, for relative-threat replanning
-  Navigation/PredictiveHelmsman.*  Look-ahead + turn-in follower, engine-free and unit-tested
-  Navigation/ReplanPolicy.*        When a route is stale (5 triggers + hysteresis), engine-free
-  Navigation/NavalNavigatorComponent.*  Planner + helmsman + replanning + escape state machine
-  Demo/NavalNavDemoGameMode.*  Spawns the whole demo (sea, sky, fleet, zones) and five scenarios
-  Demo/NavalNavDemoPlayerController.*  Click-to-move, Tab cycle, 1/2/3 overlays, 5-9 scenarios, P
-  Debug/NavalNavDebugActor.* Drop-in-a-level harness with two draggable endpoints
-  Tests/                     Automation tests
-Tools/AlgoSelfTest/          The same tests without an engine (development aid)
+hostile(ship, zone) := ship.power + threshold < zone.power
 ```
 
-A few decisions worth pointing at:
+A hostile zone is a huge cost; a non-hostile one is merely expensive. The same map therefore produces different routes for different ships with **zero per-encounter scripting** — designers place a zone and set one number. When a ship is fully enclosed by hostile zones it doesn't freeze: it degrades gracefully and exits through the **lowest-power zone** on the boundary (the least-bad way out).
 
-- **Cost comes from an injected functor**, not from the grid, so a search can run against
-  ground truth or against what one particular ship believes it knows.
-- **String pulling is cost-aware.** A naive line-of-sight smoothing pass cuts straight back
-  through the danger the search just spent cost avoiding; this one only shortcuts when the
-  straight line is not meaningfully more expensive than the route it replaces.
-- **The search reuses its buffers** and marks visited cells with a per-query generation stamp,
-  so replanning every few seconds costs no heap traffic and no 40k-entry clear.
-- **The threat layer is cleared and re-stamped, not incrementally edited.** Zones overlap and
-  stack, so subtracting a moving zone's old footprint would need per-zone bookkeeping to stay
-  exact. Re-stamping is inherently correct and happens at most once per frame, lazily.
+### 2. Planner / helmsman split
 
-## Sailing model
+The A\* planner (8-neighbour, octile heuristic, injectable cost functor, cost-aware string-pulling that refuses to shortcut back through danger) is engine-free and physics-agnostic. The **predictive helmsman** turns its waypoints into rudder and sail-trim commands:
 
-The ship is a sailing ship, not a motorboat, and the difference is one curve. Forward drive is a
-**polar function of the angle between the bow and the wind**: flatly zero in a no-go zone dead
-upwind (so the ship must tack, not point, to make ground to windward), rising to a peak on a beam
-reach, and easing off again running downwind. Speed then chases a quadratic-drag terminal that is
-pinned to `MaxSpeed` on the best point of sail, and the rudder only bites once the ship has way on
-— together, exactly the constraints that make the Slice 3 follower have to *think* about the wind
-rather than drive straight lines. The math lives in a plain `FSailingModel` struct so it is
-unit-tested without a world, the same way the pathfinder is. (A stationary ship keeps a small
-at-rest yaw authority so it can turn out of the no-go cone instead of getting stuck head-to-wind;
-the helmsman bears away to a driving point of sail to recover.)
+- steers at a **speed-scaled look-ahead point** on the path,
+- computes a **turn-in distance** (`R·tan(θ/2)` from the ship's turning circle) and puts the helm over *before* the corner — the way a real helmsman does,
+- **tacks** when the wanted course is inside the no-go cone, and recovers from being caught "in irons" at zero speed,
+- eases trim for arrival without losing steerage way.
 
-Wind-aware *planning* — routing around legs that would be dead upwind — is deliberate future work.
-The planner stays physics-agnostic: A\* knows nothing about the wind, and the helmsman reconciles
-its geometric route with what the hull can actually sail.
+![Grid cost field, planned route and live steering telemetry](docs/media/overlays_grid.gif)
 
-## Predictive helmsman
+*Debug overlays: per-cell cost field, planned route, look-ahead and turn-in markers, live helm telemetry.*
 
-The design rule the whole repo is built around: **the planner is physics-agnostic and the helmsman
-owns the physics.** A\* hands back a route that knows nothing about wind or turning circles — it is
-*intent*, not a rail — and the helmsman reconciles it with a hull that cannot point upwind or corner
-instantly. It steers at a **look-ahead point** that slides further along the path the faster the
-ship goes, and it starts each turn *before* the corner: from the sailing model's turning circle it
-computes a **turn-in distance** (`R·tan(θ/2)`, so it grows with speed and corner sharpness) and
-blends onto the next leg early, carving the corner instead of overshooting. When the course it
-wants is dead upwind it tacks to the nearest sailable edge. Like everything else here, the helmsman
-is a plain struct — a closed loop of it plus `FSailingModel` sails a zigzag to its goal in a unit
-test with no world.
+### 3. A sailing model you can unit-test
 
-## Replanning triggers
+The hull is a deliberately simple kinematic model (`FSailingModel`, plain struct, no engine types): thrust from a **wind polar curve** (zero in the no-go cone, peak on a beam reach), semi-implicit quadratic drag so terminal speed is `MaxSpeed·√drive` *by construction*, rudder response lag, speed-dependent steering authority. Simple enough to reason about, honest enough to make the AI read like a sailor.
 
-A route is *intent*, and intent goes stale. `FReplanPolicy` — another plain, engine-free struct —
-decides *when* to replan (the pathfinder still decides *how*). Five triggers, each toggleable: the
-ship drifts **off-route** past a grace time; a cell on the remaining path becomes **blocking for
-this ship's power** (a zone moved onto it); a **relevant zone changed** near the route (event-driven,
-not polled); this ship's **own power changed**; or a cheap **periodic** backstop. A minimum replan
-interval is the storm-guard — a hundred zone jitters in a window collapse to about ten replans, not
-a hundred — and the navigator replans **without stopping**: the new route is planned from the ship's
-current position and spliced in, so there is no snap back to a start waypoint, and a still-valid
-route is only replaced for a meaningfully cheaper one.
+### 4. Event-driven replanning with hysteresis
 
-## Escape behavior
+A route is invalidated when any of these fire: the ship is knocked **off-route** (grace-timed), the remaining path becomes **blocked for this ship's power**, a **zone moves or changes power** near the ship or its path, the **ship's own power changes**, or a periodic validity check catches drift. Replans never stop the ship — the new route is planned from the current position and spliced in. Hysteresis and an adopt-only-if-better rule prevent replan storms; the overlay shows honest `validations N / replans M` counters.
 
-When a ship finds itself in hostile water — a zone drifted over it, or its power dropped — it breaks
-off (`Following → Escaping`). A bounded outward ring search, rated for that ship's own power, finds
-the **nearest open-water cell**; if the ship is fully boxed in, it takes the **least-bad exit** —
-the cell through the weakest part of the enclosure — then resumes its original goal the moment it is
-clear. The search is a shared grid utility (`FSeaGridPathfinder::FindNearestCellBelowCost`), so it
-is unit-tested on a synthetic cost field with no world.
+![A patrolling zone crosses the route and the ship re-plans mid-voyage](docs/media/scenario6_replan.gif)
 
-## Trying it
+*A patrolling zone slides across the route → the navigator re-plans mid-voyage, without stopping.*
 
-**The demo.** Open the project in UE 5.5, make a **New Empty Level**, and press **Play** — the demo
-GameMode spawns the sea, sky, a fleet, the wind and danger zones from code. Pick a scenario with the
-number keys:
+![Ship enclosed by a ring of zones escapes through the weakest gap](docs/media/scenario8_enclosure_escape.gif)
 
-| Key | Scenario |
-| --- | --- |
-| `5` | Baseline — static zones, ships wander between goals |
-| `6` | Moving zone — a patrol slides across a route → mid-voyage replan |
-| `7` | Power contrast — weak (cyan route) vs strong (gold route), same start/goal → different routes |
-| `8` | Enclosure — a ship ringed by zones with one weak gap → escapes through it |
-| `9` | Power drop — a strong ship crossing a zone; press `O`/`P` to change its power → it re-solves |
+*Enclosure: surrounded by hostile zones, the ship exits through the weakest one, then resumes its goal.*
 
-Left-click the water to move the selected ship (a player order — it stops wandering and its hull
-brightens), `Tab` cycles ships, `1`/`2`/`3` toggle the navigator / ship / grid overlays, the
-**arrow keys** steer the wind (`Left`/`Right` direction, `Up`/`Down` strength), **`O`/`P`**
-strengthen / weaken the selected ship, and the mouse-wheel zooms. A HUD shows the scenario, the live
-wind, the selected ship's power and the key map.
+![Ship weakened mid-voyage re-solves its route to avoid a zone it was crossing](docs/media/scenario9_power_drop.gif)
 
-**The planner on its own.** Place an `ANavalNavDebugActor` and a few `ADangerZone`s in a level and
-drag them around: the actor ticks in the editor viewport, so the route bends without entering PIE.
+*Power drop: weakened mid-voyage (`P` key), the ship re-solves and avoids the zone it was about to cross.*
 
-Without an engine installed, the navigation, sailing, helmsman and replanning cores still run:
+## Architecture
 
-```bash
-./Tools/AlgoSelfTest/run_tests.sh     # A*-vs-Dijkstra optimality, the sailing model, a
-                                      # closed-loop helmsman, and the replan/escape logic
+```mermaid
+flowchart LR
+    subgraph Grid["Grid (engine-free core)"]
+        SG[SeaGrid subsystem<br/>cost + threat layers]
+        PF[A* pathfinder<br/>cost functor injected]
+    end
+    subgraph Threat
+        DZ[DangerZone actors<br/>Static / Patrol / Orbit]
+        TE[ThreatEvaluator<br/>relative hostility]
+    end
+    subgraph Ship["Ship (engine-free core)"]
+        SM[FSailingModel<br/>polar, drag, rudder]
+        W[WindSubsystem]
+        PW[ShipPowerComponent]
+    end
+    subgraph Navigation
+        NV[NavalNavigatorComponent<br/>Idle/Planning/Following/Escaping]
+        HM[PredictiveHelmsman<br/>look-ahead + turn-in + tack]
+        RP[ReplanPolicy<br/>5 triggers + hysteresis]
+    end
+    DZ --> SG
+    TE --> PF
+    SG --> PF
+    PF --> NV
+    RP --> NV
+    PW --> NV
+    NV --> HM
+    W --> SM
+    HM --> SM
 ```
+
+The navigation core (grid, pathfinder, sailing model, helmsman, replan policy) is **plain C++ with no engine dependencies**, wrapped by thin UE classes. That's what makes the test story below possible.
+
+## Try it
+
+Requirements: **UE 5.5**, Visual Studio 2022 (C++ game dev workload), Windows.
+
+```powershell
+git clone https://github.com/kaan1altay/naval-navigation-sample.git
+# Build (or right-click the .uproject → Generate project files → build in VS):
+& "C:\Program Files\Epic Games\UE_5.5\Engine\Build\BatchFiles\Build.bat" NavalNavSampleEditor Win64 Development -project="<path>\NavalNavSample.uproject" -waitmutex
+```
+
+Open `NavalNavSample.uproject` → **File → New Level → Empty Level** → **Play**. The demo GameMode spawns everything: sea, wind, fleet, danger zones, HUD.
+
+| Key | Action |
+|---|---|
+| `5`–`9` | Demo scenarios: baseline · moving-zone replan · power contrast · enclosure escape · power drop |
+| Left-click | Order the selected ship to a point |
+| `Tab` | Cycle selected ship |
+| `1` / `2` / `3` | Navigator / ship / grid-cost overlays |
+| `←` `→` / `↑` `↓` | Rotate wind / change wind strength |
+| `O` / `P` | Raise / lower selected ship's power |
+| Mouse wheel | Zoom |
+
+## Tests
+
+**30 automation tests** run in-engine (`Automation RunTests NavalNav`), covering pathfinding (including an A\*-vs-Dijkstra optimality check on randomized threat fields), the sailing model (polar shape, bounded speed, no-turn-without-way, 10k-tick NaN soak), the helmsman (turn-in before the corner, no orbiting, missed-waypoint recovery, in-irons recovery, closed-loop zigzag arrival) and replanning/escape (grace timing, per-ship blocking, hysteresis under zone jitter, splice continuity, least-bad-exit selection).
+
+The same engine-free scenarios also compile against a minimal shim (`Tools/AlgoSelfTest`) with clang — 600+ assertions, clean under ASan/UBSan — so the core algorithms are verifiable without Unreal installed.
 
 ## Scope / non-goals
 
-Deliberate boundaries, so the sample stays a readable illustration of one idea rather than a
-half-finished game:
+Deliberate simplifications, documented rather than hidden: kinematic hull (no buoyancy/Chaos physics), simple single-edge tacking (no full VMG beating with laylines), planner stays wind-agnostic (wind-aware routing is future work), A\* re-solve rather than incremental D\*-Lite, single-player. See [`docs/STATUS.md`](docs/STATUS.md) for the full development log.
 
-- **Kinematic hull, not a buoyancy sim.** The ship is `FSailingModel` integrated on the XY plane and
-  written to the transform — no PhysX/Chaos, no waves, no heel. Readable and deterministic on purpose.
-- **No full VMG beating to windward.** The tacker holds one close-hauled edge and bears away; it does
-  not lay a proper zig-zag with laylines.
-- **Replanning is A\* from scratch** (with buffer reuse), not incremental D\*-Lite. Correct and simple
-  at the demo's replan rate.
-- **Single-threaded, single-player, no networking.** The search runs on the game thread; there is no
-  replication.
+## License
 
-Each of these is called out with its reasoning in [docs/STATUS.md](docs/STATUS.md); none is a
-missing feature so much as a chosen edge.
+MIT — see [LICENSE](LICENSE).
