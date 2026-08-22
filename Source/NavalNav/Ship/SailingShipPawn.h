@@ -157,9 +157,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> HullMaterial;
 
-	/** The ship's assigned hull colour. Default is a saturated crimson that reads on the blue sea. */
+	/**
+	 * The ship's assigned hull colour. A vivid red-orange rather than a crimson: at recording zoom
+	 * a dark red hull reads as almost black against the sea, and the extra green lifts it clear.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing", meta = (AllowPrivateAccess = "true"))
-	FLinearColor HullColor = FLinearColor(0.80f, 0.06f, 0.06f);
+	FLinearColor HullColor = FLinearColor(1.00f, 0.25f, 0.05f);
 
 	/** Whether this ship is the player-selected one (draws a ring, enables its overlays). */
 	bool bSelected = false;

@@ -454,18 +454,20 @@ void UNavalNavigatorComponent::DrawNavDebug() const
 	// The route: a line through every waypoint, with a small sphere at each.
 	if (CurrentPath.bSuccess)
 	{
-		const FColor RouteColor = (State == ENavigatorState::Escaping) ? FColor(255, 90, 90) : FColor(70, 130, 180);
+		// Thick and bright on purpose: the route is the thing a viewer is meant to read at a glance
+		// in a recorded clip, and the old hairline steel blue vanished against the sea at that zoom.
+		const FColor DrawColor = (State == ENavigatorState::Escaping) ? FColor(255, 90, 90) : RouteColor;
 		for (int32 Index = 0; Index < CurrentPath.Num(); ++Index)
 		{
 			const FVector Point = CurrentPath.Waypoints[Index] + Lift;
 			if (Index > 0)
 			{
-				DrawDebugLine(World, CurrentPath.Waypoints[Index - 1] + Lift, Point, RouteColor,
-					/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/6.0f);
+				DrawDebugLine(World, CurrentPath.Waypoints[Index - 1] + Lift, Point, DrawColor,
+					/*bPersistentLines=*/false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/22.0f);
 			}
 			const bool bActive = (Index == LastOutput.ActiveWaypoint);
-			DrawDebugSphere(World, Point, bActive ? 300.0f : 150.0f, 12,
-				bActive ? FColor(255, 220, 80) : RouteColor, false, -1.0f);
+			DrawDebugSphere(World, Point, bActive ? 380.0f : 200.0f, 12,
+				bActive ? FColor(255, 220, 80) : DrawColor, false, -1.0f, /*DepthPriority=*/0, /*Thickness=*/8.0f);
 		}
 	}
 

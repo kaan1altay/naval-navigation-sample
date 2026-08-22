@@ -265,7 +265,7 @@ without disturbing the shared stamped layer.
 | --- | --- | --- |
 | `5` | Baseline | static zones, ships wander between random goals |
 | `6` | Moving zone | a patrolling zone slides across a route → a mid-voyage replan |
-| `7` | Power contrast | weak (crimson) and strong (gold) ship, same start/goal → different routes |
+| `7` | Power contrast | weak (cyan route) and strong (gold route) ship, same start/goal → different routes |
 | `8` | Enclosure | a ship ringed by zones with one weak gap → escapes through it |
 | `9` | Power drop | a strong ship crossing a zone; press `P` to weaken it → it re-solves around |
 
@@ -369,8 +369,8 @@ user's call.
 
 - **Bigger, saturated hulls.** The hull is scaled to ~400 uu (about two grid cells) so it reads at
   default zoom, on a matte material (roughness 1) so the strong sun does not wash the colour to
-  white. Fleet colours are high-contrast against the blue sea: flagship gold-orange, escorts
-  crimson. The selected ship keeps its colour and gets a bright cyan ring on the water.
+  white. Fleet colours are high-contrast against the blue sea: flagship gold-orange, escorts a
+  vivid red-orange. The selected ship keeps its colour and gets a bright cyan ring on the water.
 - **The navigable area is obvious.** A persistent bright, thin cyan frame is drawn around the grid;
   the navigable water is a matte mid blue, the sea beyond it a huge, darker, desaturated navy plane
   (so the horizon is never a black edge and the outside clearly reads as "not playable"); and a
@@ -389,6 +389,27 @@ user's call.
   markers for all ships.
 
 **New cvar:** `naval.Nav.DebugAllShips` (0 = markers on the selected ship only, default; 1 = all).
+
+## Polish pass 4 (recording readability)
+
+Visual only, from a first recorded GIF; no gameplay or test changes (still 30 green). Everything
+here is about reading the demo at recording zoom, where the previous pass's choices were tuned for
+a full-size editor viewport.
+
+- **Routes are the headline, so they are drawn like it.** The planned route went from a 6 uu
+  hairline in a dark steel blue to a 22 uu line in a bright colour, with waypoint spheres up from
+  150/300 uu to 200/380 uu. The colour is now per ship (`UNavalNavigatorComponent::RouteColor`)
+  rather than one shared constant: the demo keys it off the ship's power, so an ordinary ship
+  draws bright cyan and a flagship bright gold. Scenario 7 is entirely the story of those two
+  routes diverging around a zone, and cyan-vs-gold separates far better at a glance than the two
+  hull tints would, which sit close together in hue by design. The escape state still overrides
+  the route to red.
+- **Hulls read at mid-zoom.** The escort crimson was dark enough to read as almost black against
+  the sea at distance; it is now a vivid red-orange (`1.00, 0.25, 0.05`), and the hull mesh is
+  ~1.3x larger (scale `1.7, 1.7, 5.2`, so ~520 uu long).
+
+**New tunables:** `EscortRouteColor` / `FlagshipRouteColor` on the demo GameMode, and
+`RouteColor` on the navigator component.
 
 ## Did it compile?
 

@@ -316,12 +316,25 @@ UNavalNavigatorComponent* ANavalNavDemoGameMode::AddNavigator(ASailingShipPawn* 
 	UNavalNavigatorComponent* Navigator = NewObject<UNavalNavigatorComponent>(Ship);
 	Navigator->RegisterComponent();
 
+	// Colour the route by the ship's own power. Scenario 7 is entirely about the two routes
+	// diverging, so they get the two most separable bright colours on this sea rather than the
+	// hull tints, which sit close together in hue by design.
+	Navigator->RouteColor = IsFlagshipPower(Ship) ? FlagshipRouteColor : EscortRouteColor;
+
 	if (bWander)
 	{
 		Navigator->OnArrived.AddDynamic(this, &ANavalNavDemoGameMode::OnShipArrived);
 	}
 	Navigator->RequestMoveTo(InitialGoal);
 	return Navigator;
+}
+
+bool ANavalNavDemoGameMode::IsFlagshipPower(const ASailingShipPawn* Ship) const
+{
+	const UShipPowerComponent* Power = Ship ? Ship->GetPowerComponent() : nullptr;
+	// Halfway between an escort's 1.0 and the flagship's 8.0: any sane retune of FlagshipPower
+	// still lands the two classes on opposite sides of it.
+	return Power && Power->GetPowerLevel() >= FlagshipPower * 0.5f;
 }
 
 ADangerZone* ANavalNavDemoGameMode::SpawnZone(const FVector& Loc, float Radius, float Power, EZoneMovement Movement)
@@ -380,9 +393,10 @@ void ANavalNavDemoGameMode::StartScenario(int32 Index)
 	DemoRandom.Initialize(1000 + CurrentScenario); // deterministic reset per scenario
 
 	const FVector C(GridConfig.Center.X, GridConfig.Center.Y, 0.0);
-	// Saturated, high-contrast against the blue sea: flagship a strong gold-orange, escorts crimson.
+	// Saturated, high-contrast against the blue sea: flagship a strong gold-orange, escorts a vivid
+	// red-orange. The escorts were a crimson, which at recording zoom read as almost black.
 	const FLinearColor Gold(1.0f, 0.55f, 0.04f);
-	const FLinearColor Blue(0.82f, 0.06f, 0.06f);   // named "Blue" historically; now crimson
+	const FLinearColor Blue(1.00f, 0.25f, 0.05f);   // named "Blue" historically; now a vivid red-orange
 	const FLinearColor Steel(0.90f, 0.20f, 0.05f);  // a distinct orange-red for the lone escaper
 
 	switch (CurrentScenario)
@@ -428,7 +442,7 @@ void ANavalNavDemoGameMode::StartScenario(int32 Index)
 	}
 	case 7:
 	{
-		ScenarioTitle = TEXT("[7] Power contrast - weak (crimson) routes around the zone, strong (gold) sails through");
+		ScenarioTitle = TEXT("[7] Power contrast - weak (cyan route) goes around the zone, strong (gold route) sails through");
 		const FVector Start = C + FVector(-FieldRadius, -1500.0, 0.0);
 		const FVector Goal = C + FVector(FieldRadius, 1500.0, 0.0);
 		SpawnZone(C, 4000.0f, 3.0f); // squarely on the direct line

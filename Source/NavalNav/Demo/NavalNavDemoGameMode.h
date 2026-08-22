@@ -72,6 +72,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
 	FLinearColor SeaColor = FLinearColor(0.035f, 0.12f, 0.30f);
 
+	/** Route colour for an ordinary (weak) ship. Bright cyan: the strongest contrast on this sea. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
+	FColor EscortRouteColor = FColor(0, 230, 255);
+
+	/** Route colour for a flagship-power ship, matching its gold hull. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo")
+	FColor FlagshipRouteColor = FColor(255, 200, 40);
+
 	/** Ship power the grid overlay is stamped for, so the drawn threat stays steady as ships replan. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Demo", meta = (ClampMin = "0.0"))
 	float OverlayObserverPower = 1.0f;
@@ -119,6 +127,9 @@ private:
 
 	/** Adds a navigator to a ship; optionally binds auto-wander and gives it an initial goal. */
 	UNavalNavigatorComponent* AddNavigator(ASailingShipPawn* Ship, bool bWander, const FVector& InitialGoal);
+
+	/** Whether this ship was spawned at flagship power, which is what its route colour keys off. */
+	bool IsFlagshipPower(const ASailingShipPawn* Ship) const;
 
 	/** Spawns a danger zone. */
 	ADangerZone* SpawnZone(const FVector& Loc, float Radius, float Power, EZoneMovement Movement = EZoneMovement::Static);

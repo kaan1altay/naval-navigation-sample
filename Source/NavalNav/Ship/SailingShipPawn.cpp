@@ -46,9 +46,9 @@ ASailingShipPawn::ASailingShipPawn()
 	{
 		HullMesh->SetStaticMesh(ConeMesh.Object);
 		HullMesh->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
-		// The cone is 100 uu; this makes the hull ~400 uu long (about two 200 uu grid cells) so it
+		// The cone is 100 uu; this makes the hull ~520 uu long (about 2.5 200 uu grid cells) so it
 		// reads clearly from the demo camera at default zoom.
-		HullMesh->SetRelativeScale3D(FVector(1.3, 1.3, 4.0));
+		HullMesh->SetRelativeScale3D(FVector(1.7, 1.7, 5.2));
 	}
 
 	// Explicitly base the hull on a lit material that exposes a "Color" vector parameter. The cone's

@@ -117,7 +117,7 @@ number keys:
 | --- | --- |
 | `5` | Baseline — static zones, ships wander between goals |
 | `6` | Moving zone — a patrol slides across a route → mid-voyage replan |
-| `7` | Power contrast — weak (crimson) vs strong (gold), same start/goal → different routes |
+| `7` | Power contrast — weak (cyan route) vs strong (gold route), same start/goal → different routes |
 | `8` | Enclosure — a ship ringed by zones with one weak gap → escapes through it |
 | `9` | Power drop — a strong ship crossing a zone; press `O`/`P` to change its power → it re-solves |
 

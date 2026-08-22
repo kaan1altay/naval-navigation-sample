@@ -132,6 +132,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Navigation|Escape", meta = (ClampMin = "0.0"))
 	float EscapeSearchRadius = 12000.0f;
 
+	/**
+	 * Colour of this ship's drawn route. Set per ship (the demo keys it off power) so two routes
+	 * over the same water stay tellable apart at recording zoom; the escape state still overrides
+	 * it with red. Bright cyan by default, which is the highest-contrast colour on the blue sea.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval|Navigation|Debug")
+	FColor RouteColor = FColor(0, 230, 255);
+
 private:
 	/** Cast the owner and cache the ship; subscribe to zone and power events. */
 	void CacheShipAndSubscribe();
