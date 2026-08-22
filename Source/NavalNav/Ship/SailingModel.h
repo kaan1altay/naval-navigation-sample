@@ -22,7 +22,7 @@ struct NAVALNAV_API FSailingModelParams
 
 	/** Top speed (uu/s) on the best point of sail in full wind. Everything else is a fraction of it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing|Speed", meta = (ClampMin = "1.0"))
-	float MaxSpeed = 1200.0f;
+	float MaxSpeed = 1500.0f;
 
 	/**
 	 * Peak forward acceleration (uu/s^2) at full drive. It sets both how briskly the ship builds
@@ -31,7 +31,7 @@ struct NAVALNAV_API FSailingModelParams
 	 * coincidence.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing|Speed", meta = (ClampMin = "1.0"))
-	float MaxThrustAccel = 350.0f;
+	float MaxThrustAccel = 400.0f;
 
 	//~ Steering --------------------------------------------------------------------------------
 
@@ -68,7 +68,7 @@ struct NAVALNAV_API FSailingModelParams
 
 	/** Half-width of the no-go zone: within this angle of the wind's eye the sails luff and thrust is zero. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing|Polar", meta = (ClampMin = "0.0", ClampMax = "89.0"))
-	float NoGoAngleDegrees = 40.0f;
+	float NoGoAngleDegrees = 22.0f;
 
 	/** Angle off the wind where thrust peaks (a beam-to-broad reach). The polar curve tops out at 1 here. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sailing|Polar", meta = (ClampMin = "1.0", ClampMax = "179.0"))

@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -48,6 +49,17 @@ inline constexpr float UE_SMALL_NUMBER = 1.0e-8f;
 inline constexpr float UE_PI = 3.1415926535897932f;
 
 enum class EAllowShrinking : uint8 { No, Yes };
+
+/**
+ * Stand-in for Unreal's TNumericLimits. Only Max()/Min() are used by the navigation core (the
+ * pathfinder seeds its best-cost search with Max()), so only those are mirrored here.
+ */
+template <typename T>
+struct TNumericLimits
+{
+	static constexpr T Max() { return std::numeric_limits<T>::max(); }
+	static constexpr T Min() { return std::numeric_limits<T>::lowest(); }
+};
 
 template <typename T>
 inline void Swap(T& A, T& B)

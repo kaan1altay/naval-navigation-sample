@@ -101,7 +101,7 @@ Source/NavalNav/
 **Sailing model.** `FSailingModel` is a plain, engine-free struct — the same discipline as the
 Slice 1 pathfinder core — so the physics is unit-tested without a `UWorld`. The heart of it is
 the **polar curve**: forward drive as a function of the angle between the bow and the wind. It is
-flatly zero inside a **no-go zone** (±`NoGoAngleDegrees`, default 40°) dead upwind, rises smoothly
+flatly zero inside a **no-go zone** (±`NoGoAngleDegrees`, default 22°) dead upwind, rises smoothly
 to a peak of 1 on a **beam reach**, and eases to `DownwindFactor` (0.65) dead downwind. Speed then
 integrates against a **quadratic drag** toward a bounded terminal, and — this is the tuning trick —
 the drag coefficient is derived from `MaxThrustAccel` and `MaxSpeed` so thrust and drag balance

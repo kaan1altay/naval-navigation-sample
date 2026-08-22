@@ -803,19 +803,21 @@ namespace
 
 		FSailingModelParams Sail;
 		TEST_NEARLY(FPredictiveHelmsman::TurnInDistance(90.0f, 0.0f, Sail), 0.0f, 1.0e-3f);
-		const float TurnInSlow = FPredictiveHelmsman::TurnInDistance(90.0f, 600.0f, Sail);
-		const float TurnInFast = FPredictiveHelmsman::TurnInDistance(90.0f, 1200.0f, Sail);
+		const float SlowSpeed = Sail.MaxSpeed * 0.4f;   // below the steering-authority knee
+		const float FastSpeed = Sail.MaxSpeed;          // full way on
+		const float TurnInSlow = FPredictiveHelmsman::TurnInDistance(90.0f, SlowSpeed, Sail);
+		const float TurnInFast = FPredictiveHelmsman::TurnInDistance(90.0f, FastSpeed, Sail);
 		TEST_CHECK(TurnInSlow > 0.0f);
 		TEST_CHECK(TurnInFast > TurnInSlow + 1.0f);
-		TEST_CHECK(FPredictiveHelmsman::TurnInDistance(120.0f, 1200.0f, Sail)
-			> FPredictiveHelmsman::TurnInDistance(45.0f, 1200.0f, Sail));
+		TEST_CHECK(FPredictiveHelmsman::TurnInDistance(120.0f, FastSpeed, Sail)
+			> FPredictiveHelmsman::TurnInDistance(45.0f, FastSpeed, Sail));
 
 		const FNavalPath Path = MakeHelmsmanPath(
 			{ FVector(0, 0, 0), FVector(10000, 0, 0), FVector(10000, 10000, 0) });
 
 		FHelmsmanInput In;
 		In.ShipHeadingDeg = 0.0f;
-		In.ShipSpeed = 1200.0f;
+		In.ShipSpeed = Sail.MaxSpeed;
 		In.WindFromDeg = -90.0f;
 
 		{
@@ -1050,6 +1052,8 @@ namespace
 		FPredictiveHelmsman Helmsman;
 		const float WindFromDeg = 0.0f;
 		const float NoGo = Model.Params.NoGoAngleDegrees;
+		// "has way on" as a fraction of top speed, so the check survives a MaxSpeed retune.
+		const float MakingWay = Model.Params.MaxSpeed * 0.02f;
 
 		FSailingState State;
 		State.HeadingDegrees = 0.0f;
@@ -1081,7 +1085,7 @@ namespace
 			const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
 			Position = Position + FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
 
-			if (FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromDeg) >= NoGo && State.Speed > 30.0f)
+			if (FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromDeg) >= NoGo && State.Speed > MakingWay)
 			{
 				bRecovered = true;
 			}

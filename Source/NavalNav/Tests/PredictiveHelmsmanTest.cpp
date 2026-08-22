@@ -77,12 +77,14 @@ bool FNavalNavHelmsmanTurnInTest::RunTest(const FString& Parameters)
 
 	// Turn-in distance is positive with way on, zero without, and grows with speed above the knee.
 	TestEqual(TEXT("No way on, no turn-in"), FPredictiveHelmsman::TurnInDistance(90.0f, 0.0f, Sail), 0.0f, 1.0e-3f);
-	const float TurnInSlow = FPredictiveHelmsman::TurnInDistance(90.0f, 600.0f, Sail);
-	const float TurnInFast = FPredictiveHelmsman::TurnInDistance(90.0f, 1200.0f, Sail);
+	const float SlowSpeed = Sail.MaxSpeed * 0.4f;   // below the steering-authority knee
+	const float FastSpeed = Sail.MaxSpeed;          // full way on
+	const float TurnInSlow = FPredictiveHelmsman::TurnInDistance(90.0f, SlowSpeed, Sail);
+	const float TurnInFast = FPredictiveHelmsman::TurnInDistance(90.0f, FastSpeed, Sail);
 	TestTrue(TEXT("Turn-in is positive with way on"), TurnInSlow > 0.0f);
 	TestTrue(TEXT("Turn-in grows with speed"), TurnInFast > TurnInSlow + 1.0f);
 	TestTrue(TEXT("A sharper corner needs more turn-in than a gentle one"),
-		FPredictiveHelmsman::TurnInDistance(120.0f, 1200.0f, Sail) > FPredictiveHelmsman::TurnInDistance(45.0f, 1200.0f, Sail));
+		FPredictiveHelmsman::TurnInDistance(120.0f, FastSpeed, Sail) > FPredictiveHelmsman::TurnInDistance(45.0f, FastSpeed, Sail));
 
 	// A right-angle corner: straight east, then north.
 	const FNavalPath Path = NavalNavHelmsmanTest::MakePath(
@@ -90,7 +92,7 @@ bool FNavalNavHelmsmanTurnInTest::RunTest(const FString& Parameters)
 
 	FHelmsmanInput In;
 	In.ShipHeadingDeg = 0.0f;
-	In.ShipSpeed = 1200.0f;
+	In.ShipSpeed = Sail.MaxSpeed;
 	In.WindFromDeg = -90.0f;
 
 	// Well before the corner (beyond both look-ahead and turn-in) the helm is idle.
@@ -378,6 +380,8 @@ bool FNavalNavHelmsmanIronsTest::RunTest(const FString& Parameters)
 
 	const float WindFromDeg = 0.0f;              // wind out of bearing 0
 	const float NoGo = Model.Params.NoGoAngleDegrees;
+	// "has way on" as a fraction of top speed, so the check survives a MaxSpeed retune.
+	const float MakingWay = Model.Params.MaxSpeed * 0.02f;
 
 	// Dead in the water, bow pointed straight into the wind's eye, with an upwind goal — the classic
 	// "in irons" deadlock.
@@ -411,7 +415,7 @@ bool FNavalNavHelmsmanIronsTest::RunTest(const FString& Parameters)
 		const float HeadingRad = FMath::DegreesToRadians(State.HeadingDegrees);
 		Position += FVector(FMath::Cos(HeadingRad), FMath::Sin(HeadingRad), 0.0) * (State.Speed * Dt);
 
-		if (FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromDeg) >= NoGo && State.Speed > 30.0f)
+		if (FSailingModel::AngleOffWind(State.HeadingDegrees, WindFromDeg) >= NoGo && State.Speed > MakingWay)
 		{
 			bRecovered = true;
 		}
