@@ -127,7 +127,7 @@ Open `NavalNavSample.uproject` → **File → New Level → Empty Level** → **
 
 **30 automation tests** run in-engine (`Automation RunTests NavalNav`), covering pathfinding (including an A\*-vs-Dijkstra optimality check on randomized threat fields), the sailing model (polar shape, bounded speed, no-turn-without-way, 10k-tick NaN soak), the helmsman (turn-in before the corner, no orbiting, missed-waypoint recovery, in-irons recovery, closed-loop zigzag arrival) and replanning/escape (grace timing, per-ship blocking, hysteresis under zone jitter, splice continuity, least-bad-exit selection).
 
-The same engine-free scenarios also compile against a minimal shim (`Tools/AlgoSelfTest`) with clang — 600+ assertions, clean under ASan/UBSan — so the core algorithms are verifiable without Unreal installed.
+The same engine-free scenarios also compile against a minimal shim (`Tools/AlgoSelfTest`) with clang — +760 assertions, clean under ASan/UBSan — so the core algorithms are verifiable without Unreal installed.
 
 ## Scope / non-goals
 
