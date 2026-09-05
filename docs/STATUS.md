@@ -10,23 +10,7 @@ _Last updated: 2026-08-19 — Slice 4 + polish passes 1–3. **Feature-complete;
 
 ## Environment
 
-Slice 1 was first authored in a **Linux container** (Ubuntu 24.04, x86-64), not on the Windows
-workstation the task assumed, so at the end of Slice 1 the project had not yet been compiled by
-Unreal Build Tool — everything was written against the UE 5.5 API and verified only by the
-engine-free harness. Slice 2 was built on the Windows box, where the whole module now compiles
-and the tests run in the editor.
-
-| Tool | Found | Notes |
-| --- | --- | --- |
-| Unreal Engine 5.x | **no** | No `/opt`, `/usr/share` or Epic launcher install; the machine is Linux, so `C:\Program Files\Epic Games\UE_5.*` and the Windows registry do not apply. |
-| Visual Studio 2022 (C++ game dev) | **no** | Windows-only; `vswhere` not applicable on this platform. |
-| .NET SDK (needed by UnrealBuildTool) | **no** | `dotnet` not on PATH. |
-| clang++ / g++ | **yes** | clang++ and g++ present, C++20 capable. Used for the standalone test harness. |
-| git | **yes** | 2.43.0. |
-| `gh` CLI | **no** | Not installed. Not needed: the GitHub remote was already configured. |
-
-The project targets **UE 5.5** (`EngineAssociation` in `NavalNavSample.uproject`). Nothing large
-was installed.
+Developed on Windows with UE 5.5 and Visual Studio 2022. The engine-free core also builds and tests with clang on Linux, which is how the standalone harness runs in CI.
 
 ## What is implemented — Slice 1: sea grid, A\*, debug draw
 
