@@ -48,7 +48,7 @@ The A\* planner (8-neighbour, octile heuristic, injectable cost functor, cost-aw
 
 ### 3. A sailing model you can unit-test
 
-The hull is a deliberately simple kinematic model (`FSailingModel`, plain struct, no engine types): thrust from a **wind polar curve** (zero in the no-go cone, peak on a beam reach), semi-implicit quadratic drag so terminal speed is `MaxSpeed·√drive` *by construction*, rudder response lag, speed-dependent steering authority. Simple enough to reason about, honest enough to make the AI read like a sailor.
+The hull is a deliberately simple kinematic model (`FSailingModel`, plain struct, no engine types): thrust from a **wind polar curve** (zero in the no-go cone, peak on a beam reach), semi-implicit quadratic drag so terminal speed is `MaxSpeed·√drive` *by construction*, rudder response lag, speed-dependent steering authority. Simple enough to reason about, and enough of a hull that the AI reads like a sailor.
 
 ### 4. Event-driven replanning with hysteresis
 
